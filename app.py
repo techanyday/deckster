@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, send_file
+from flask_cors import CORS
 import openai
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -16,6 +17,8 @@ load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
 TEMP_DIR = "temp_presentations"
 UPLOAD_FOLDER = "uploads"
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
@@ -298,46 +301,67 @@ def create_ppt(content, template='modern', custom_styles=None):
     return temp_file
 
 @app.route('/')
-def home():
+def index():
+    color_schemes_json = jsonify(COLOR_SCHEMES)
     return render_template('index.html', color_schemes=COLOR_SCHEMES)
 
 @app.route('/generate', methods=['POST'])
 def generate():
-    topic = request.form.get('topic')
-    if not topic:
-        return jsonify({'error': 'No topic provided'}), 400
-    
-    template = request.form.get('template', 'modern')
-    custom_styles = json.loads(request.form.get('customStyles', '{}'))
-    source_content = None
-    
-    if 'file' in request.files:
-        file = request.files['file']
-        if file and allowed_file(file.filename):
-            source_content = extract_text_from_file(file)
-    
     try:
-        # Generate content using GPT-3.5
-        content = generate_presentation_content(topic, source_content)
+        topic = request.form.get('topic', '')
+        template = request.form.get('template', 'modern')
+        custom_styles = None
         
-        # Create PPT with selected template and styles
-        ppt_file = create_ppt(content, template, custom_styles)
+        # Handle file upload
+        source_content = None
+        if 'file' in request.files:
+            file = request.files['file']
+            if file and file.filename:
+                source_content = extract_text_from_file(file)
+        
+        # Handle custom styles
+        custom_styles_json = request.form.get('customStyles')
+        if custom_styles_json:
+            try:
+                custom_styles = json.loads(custom_styles_json)
+            except json.JSONDecodeError:
+                return jsonify({'error': 'Invalid custom styles format'}), 400
+        
+        if not topic:
+            return jsonify({'error': 'Please provide a topic'}), 400
+            
+        # Generate presentation content
+        content = generate_presentation_content(topic, source_content)
+        if not content:
+            return jsonify({'error': 'Failed to generate presentation content'}), 500
+            
+        # Create PowerPoint file
+        filename = create_ppt(content, template, custom_styles)
         
         return jsonify({
-            'success': True,
+            'message': 'Presentation generated successfully',
             'content': content,
-            'filename': os.path.basename(ppt_file)
+            'filename': filename
         })
+        
     except Exception as e:
+        app.logger.error(f"Error generating presentation: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/download/<filename>')
 def download(filename):
     try:
-        filepath = os.path.join(TEMP_DIR, filename)
-        return send_file(filepath, as_attachment=True, download_name='presentation.pptx')
+        return send_file(
+            os.path.join(TEMP_DIR, filename),
+            as_attachment=True,
+            download_name='presentation.pptx',
+            mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        )
     except Exception as e:
-        return jsonify({'error': str(e)}), 404
+        app.logger.error(f"Error downloading file: {str(e)}")
+        return jsonify({'error': 'File not found'}), 404
 
 if __name__ == '__main__':
+    # Ensure temp directory exists
+    os.makedirs(TEMP_DIR, exist_ok=True)
     app.run(debug=True)
