@@ -12,11 +12,17 @@ from werkzeug.utils import secure_filename
 import PyPDF2
 import json
 import re
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
 if not openai.api_key:
+    logger.error("No OpenAI API key found")
     raise ValueError("No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
 
 app = Flask(__name__)
@@ -303,15 +309,42 @@ def create_ppt(content, template='modern', custom_styles=None):
         prs.save(temp_file)
         return os.path.basename(temp_file)
     except Exception as e:
-        app.logger.error(f"Error saving presentation: {str(e)}")
+        logger.error(f"Error saving presentation: {str(e)}")
         raise
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Render."""
+    try:
+        # Verify OpenAI API key is set
+        if not openai.api_key:
+            raise ValueError("OpenAI API key not configured")
+            
+        # Verify temp directories exist and are writable
+        if not os.path.exists(TEMP_DIR) or not os.access(TEMP_DIR, os.W_OK):
+            raise ValueError("Temp directory not accessible")
+            
+        if not os.path.exists(UPLOAD_FOLDER) or not os.access(UPLOAD_FOLDER, os.W_OK):
+            raise ValueError("Upload folder not accessible")
+            
+        return jsonify({
+            'status': 'healthy',
+            'temp_dir': os.path.exists(TEMP_DIR),
+            'upload_dir': os.path.exists(UPLOAD_FOLDER)
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e)
+        }), 500
 
 @app.route('/')
 def index():
     try:
         return render_template('index.html', color_schemes=COLOR_SCHEMES)
     except Exception as e:
-        app.logger.error(f"Error rendering index: {str(e)}")
+        logger.error(f"Error rendering index: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/generate', methods=['POST'])
@@ -363,7 +396,7 @@ def generate():
         })
         
     except Exception as e:
-        app.logger.error(f"Error generating presentation: {str(e)}")
+        logger.error(f"Error generating presentation: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/download/<filename>')
@@ -380,13 +413,14 @@ def download(filename):
             mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
         )
     except Exception as e:
-        app.logger.error(f"Error downloading file: {str(e)}")
+        logger.error(f"Error downloading file: {str(e)}")
         return jsonify({'error': 'File not found'}), 404
 
 @app.errorhandler(500)
 def internal_error(error):
-    app.logger.error(f"Internal error: {str(error)}")
+    logger.error(f"Internal error: {str(error)}")
     return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
