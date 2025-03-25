@@ -4,7 +4,74 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PPT Generator</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            padding: 0;
+            border: none;
+        }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #1557b0;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #d32f2f;
+            margin-top: 5px;
+            display: none;
+        }
+        .success {
+            color: #388e3c;
+            margin-top: 5px;
+            display: none;
+        }
+        #loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .background-options {
+            margin-top: 10px;
+        }
+        .background-option {
+            margin: 5px 0;
+        }
+        #generatedContent {
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -14,22 +81,24 @@
             <div class="bg-white rounded-lg shadow-md p-6 space-y-6">
                 <form id="generateForm" class="space-y-6">
                     <!-- Topic Input -->
-                    <div>
+                    <div class="form-group">
                         <label for="topic" class="block text-sm font-medium text-gray-700 mb-2">Presentation Topic</label>
                         <input type="text" id="topic" name="topic" required
                             class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        <div id="topicError" class="error">Please enter a topic</div>
                     </div>
 
                     <!-- File Upload -->
-                    <div>
+                    <div class="form-group">
                         <label for="file" class="block text-sm font-medium text-gray-700 mb-2">Source Content (Optional)</label>
                         <input type="file" id="file" name="file" accept=".txt,.pdf,.docx"
                             class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        <div id="fileError" class="error"></div>
                         <p class="mt-1 text-sm text-gray-500">Upload a TXT, PDF, or DOCX file to use as source content</p>
                     </div>
 
                     <!-- Template Selection -->
-                    <div>
+                    <div class="form-group">
                         <label for="template" class="block text-sm font-medium text-gray-700 mb-2">Select Template</label>
                         <select id="template" name="template"
                             class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
@@ -42,52 +111,43 @@
                     </div>
 
                     <!-- Custom Colors -->
-                    <div class="space-y-4">
+                    <div class="form-group">
                         <h3 class="font-medium text-gray-700">Custom Colors (Optional)</h3>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label for="titleColor" class="block text-sm text-gray-600 mb-1">Title Color</label>
-                                <input type="color" id="titleColor" name="titleColor" 
-                                    class="w-full h-10 rounded-md border border-gray-300">
-                            </div>
-                            <div>
-                                <label for="textColor" class="block text-sm text-gray-600 mb-1">Text Color</label>
-                                <input type="color" id="textColor" name="textColor"
-                                    class="w-full h-10 rounded-md border border-gray-300">
-                            </div>
+                        <div>
+                            <label for="titleColor" class="block text-sm text-gray-600 mb-1">Title Color</label>
+                            <input type="color" id="titleColor" name="titleColor" 
+                                class="w-full h-10 rounded-md border border-gray-300">
+                        </div>
+                        <div>
+                            <label for="textColor" class="block text-sm text-gray-600 mb-1">Text Color</label>
+                            <input type="color" id="textColor" name="textColor"
+                                class="w-full h-10 rounded-md border border-gray-300">
                         </div>
                         
                         <!-- Background Color Options -->
-                        <div id="backgroundOptions" class="mt-4">
+                        <div class="background-options">
                             <label class="block text-sm text-gray-600 mb-1">Background Style</label>
-                            <div class="grid grid-cols-1 gap-4">
-                                <div class="flex items-center space-x-2">
-                                    <input type="radio" id="bgSolid" name="bgType" value="solid" checked
-                                        class="text-blue-600 focus:ring-blue-500">
-                                    <label for="bgSolid" class="text-sm text-gray-600">Solid Color</label>
-                                    <input type="color" id="bgColor" name="bgColor"
-                                        class="ml-2 h-8 w-16 rounded border border-gray-300">
-                                </div>
-                                
-                                <div class="flex items-center space-x-2">
-                                    <input type="radio" id="bgGradient" name="bgType" value="gradient"
-                                        class="text-blue-600 focus:ring-blue-500">
-                                    <label for="bgGradient" class="text-sm text-gray-600">Gradient</label>
-                                    <input type="color" id="bgGradient1" name="bgGradient1"
-                                        class="ml-2 h-8 w-16 rounded border border-gray-300">
-                                    <input type="color" id="bgGradient2" name="bgGradient2"
-                                        class="h-8 w-16 rounded border border-gray-300">
-                                </div>
-                                
-                                <div class="flex items-center space-x-2">
-                                    <input type="radio" id="bgPattern" name="bgType" value="pattern"
-                                        class="text-blue-600 focus:ring-blue-500">
-                                    <label for="bgPattern" class="text-sm text-gray-600">Pattern</label>
-                                    <input type="color" id="bgPattern1" name="bgPattern1"
-                                        class="ml-2 h-8 w-16 rounded border border-gray-300">
-                                    <input type="color" id="bgPattern2" name="bgPattern2"
-                                        class="h-8 w-16 rounded border border-gray-300">
-                                </div>
+                            <div class="background-option">
+                                <input type="radio" id="solidColor" name="backgroundStyle" value="solid">
+                                <label for="solidColor">Solid Color</label>
+                                <input type="color" id="backgroundColor" name="backgroundColor"
+                                    class="ml-2 h-8 w-16 rounded border border-gray-300">
+                            </div>
+                            <div class="background-option">
+                                <input type="radio" id="gradient" name="backgroundStyle" value="gradient" checked>
+                                <label for="gradient">Gradient</label>
+                                <input type="color" id="gradientStart" name="gradientStart"
+                                    class="ml-2 h-8 w-16 rounded border border-gray-300">
+                                <input type="color" id="gradientEnd" name="gradientEnd"
+                                    class="h-8 w-16 rounded border border-gray-300">
+                            </div>
+                            <div class="background-option">
+                                <input type="radio" id="pattern" name="backgroundStyle" value="pattern">
+                                <label for="pattern">Pattern</label>
+                                <input type="color" id="patternColor1" name="patternColor1"
+                                    class="ml-2 h-8 w-16 rounded border border-gray-300">
+                                <input type="color" id="patternColor2" name="patternColor2"
+                                    class="h-8 w-16 rounded border border-gray-300">
                             </div>
                         </div>
                     </div>
@@ -107,130 +167,139 @@
 
                 <div id="result" class="hidden mt-4 space-y-4">
                     <h2 class="text-lg font-semibold mb-2">Generated Content:</h2>
-                    <div id="content" class="bg-gray-50 p-4 rounded-md text-sm whitespace-pre-line"></div>
-                    <a id="download" href="#" class="hidden mt-4 inline-block bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors">
-                        Download PowerPoint
-                    </a>
+                    <div id="generatedContent" class="bg-gray-50 p-4 rounded-md text-sm whitespace-pre-line"></div>
+                    <div id="downloadContainer" style="display: none;">
+                        <a id="download" href="#" class="inline-block bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors">
+                            Download PowerPoint
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        document.getElementById('generateForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const loading = document.getElementById('loading');
-            const result = document.getElementById('result');
-            const content = document.getElementById('content');
-            const download = document.getElementById('download');
+        let currentFilename = null;
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        async function generatePresentation() {
+            const topic = document.getElementById('topic').value.trim();
+            if (!topic) {
+                showError('Please enter a topic');
+                return;
+            }
             
+            const generateBtn = document.getElementById('generateForm');
+            const loading = document.getElementById('loading');
+            generateBtn.disabled = true;
             loading.classList.remove('hidden');
-            result.classList.add('hidden');
+            
+            const formData = new FormData(generateBtn);
+            
+            // Handle file upload
+            const fileInput = document.getElementById('file');
+            if (fileInput.files.length > 0) {
+                formData.append('file', fileInput.files[0]);
+            }
+            
+            // Add custom styles
+            const customStyles = {
+                title: document.getElementById('titleColor').value,
+                text: document.getElementById('textColor').value,
+                background: {}
+            };
+            
+            const backgroundStyle = document.querySelector('input[name="backgroundStyle"]:checked').value;
+            if (backgroundStyle === 'solid') {
+                customStyles.background.type = 'solid';
+                customStyles.background.color = document.getElementById('backgroundColor').value;
+            } else if (backgroundStyle === 'gradient') {
+                customStyles.background.type = 'gradient';
+                customStyles.background.start = document.getElementById('gradientStart').value;
+                customStyles.background.end = document.getElementById('gradientEnd').value;
+            } else if (backgroundStyle === 'pattern') {
+                customStyles.background.type = 'pattern';
+                customStyles.background.color1 = document.getElementById('patternColor1').value;
+                customStyles.background.color2 = document.getElementById('patternColor2').value;
+            }
+            
+            formData.append('customStyles', JSON.stringify(customStyles));
             
             try {
-                const formData = new FormData(e.target);
-                
-                // Add custom colors and background to formData
-                const customStyles = {};
-                const titleColor = document.getElementById('titleColor').value;
-                const textColor = document.getElementById('textColor').value;
-                
-                if (titleColor) customStyles.title = titleColor.replace('#', '');
-                if (textColor) customStyles.text = textColor.replace('#', '');
-                
-                // Add background settings
-                const bgType = document.querySelector('input[name="bgType"]:checked').value;
-                const background = { type: bgType };
-                
-                if (bgType === 'solid') {
-                    background.color = document.getElementById('bgColor').value.replace('#', '');
-                } else if (bgType === 'gradient') {
-                    background.color1 = document.getElementById('bgGradient1').value.replace('#', '');
-                    background.color2 = document.getElementById('bgGradient2').value.replace('#', '');
-                    background.pattern = 'linear';
-                } else if (bgType === 'pattern') {
-                    background.color1 = document.getElementById('bgPattern1').value.replace('#', '');
-                    background.color2 = document.getElementById('bgPattern2').value.replace('#', '');
-                    background.pattern = 'dots';
-                }
-                
-                customStyles.background = background;
-                formData.append('customStyles', JSON.stringify(customStyles));
-                
                 const response = await fetch('/generate', {
                     method: 'POST',
                     body: formData
                 });
                 
-                const data = await response.json();
+                const result = await response.json();
                 
-                if (data.error) {
-                    throw new Error(data.error);
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to generate presentation');
                 }
                 
-                content.textContent = data.content;
-                download.href = `/download/${data.filename}`;
-                download.classList.remove('hidden');
-                result.classList.remove('hidden');
+                document.getElementById('generatedContent').textContent = result.content;
+                document.getElementById('downloadContainer').style.display = 'block';
+                currentFilename = result.filename;
+                showSuccess('Presentation generated successfully!');
             } catch (error) {
-                alert('Error: ' + error.message);
+                showError(error.message);
             } finally {
+                generateBtn.disabled = false;
                 loading.classList.add('hidden');
             }
-        });
-
-        // Update color inputs when template changes
-        document.getElementById('template').addEventListener('change', (e) => {
-            const template = e.target.value;
-            const schemes = {{ color_schemes|tojson }};
-            const colors = schemes[template];
-            
-            if (colors) {
-                document.getElementById('titleColor').value = '#' + colors.title;
-                document.getElementById('textColor').value = '#' + colors.text;
-                
-                // Update background colors based on template
-                const bg = colors.background;
-                if (bg.type === 'solid') {
-                    document.getElementById('bgSolid').checked = true;
-                    document.getElementById('bgColor').value = '#' + bg.color;
-                } else if (bg.type === 'gradient') {
-                    document.getElementById('bgGradient').checked = true;
-                    document.getElementById('bgGradient1').value = '#' + bg.color1;
-                    document.getElementById('bgGradient2').value = '#' + bg.color2;
-                } else if (bg.type === 'pattern') {
-                    document.getElementById('bgPattern').checked = true;
-                    document.getElementById('bgPattern1').value = '#' + bg.color1;
-                    document.getElementById('bgPattern2').value = '#' + bg.color2;
-                }
+        }
+        
+        async function downloadPresentation() {
+            if (!currentFilename) {
+                showError('No presentation available for download');
+                return;
             }
-        });
-
-        // Set initial colors based on default template
-        window.addEventListener('load', () => {
-            const defaultTemplate = document.getElementById('template').value;
-            const schemes = {{ color_schemes|tojson }};
-            const colors = schemes[defaultTemplate];
             
-            if (colors) {
-                document.getElementById('titleColor').value = '#' + colors.title;
-                document.getElementById('textColor').value = '#' + colors.text;
-                
-                // Set initial background colors
-                const bg = colors.background;
-                if (bg.type === 'solid') {
-                    document.getElementById('bgSolid').checked = true;
-                    document.getElementById('bgColor').value = '#' + bg.color;
-                } else if (bg.type === 'gradient') {
-                    document.getElementById('bgGradient').checked = true;
-                    document.getElementById('bgGradient1').value = '#' + bg.color1;
-                    document.getElementById('bgGradient2').value = '#' + bg.color2;
-                } else if (bg.type === 'pattern') {
-                    document.getElementById('bgPattern').checked = true;
-                    document.getElementById('bgPattern1').value = '#' + bg.color1;
-                    document.getElementById('bgPattern2').value = '#' + bg.color2;
+            try {
+                const response = await fetch(`/download/${currentFilename}`);
+                if (!response.ok) {
+                    throw new Error('Failed to download presentation');
                 }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'presentation.pptx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                showError(error.message);
             }
+        }
+        
+        document.getElementById('generateForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            generatePresentation();
+        });
+        
+        document.getElementById('download').addEventListener('click', (e) => {
+            e.preventDefault();
+            downloadPresentation();
         });
     </script>
 </body>

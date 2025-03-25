@@ -97,25 +97,47 @@ COLOR_SCHEMES = {
 }
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def extract_text_from_file(file):
+    """Extract text content from uploaded file."""
+    if not file or not hasattr(file, 'filename'):
+        return None
+        
+    if not allowed_file(file.filename):
+        raise ValueError(f"Invalid file type. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}")
+        
     filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
+    temp_path = os.path.join(UPLOAD_FOLDER, filename)
     
-    text = ""
-    if filename.endswith('.pdf'):
-        with open(filepath, 'rb') as f:
-            pdf_reader = PyPDF2.PdfReader(f)
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
-    elif filename.endswith('.txt'):
-        with open(filepath, 'r', encoding='utf-8') as f:
-            text = f.read()
-    
-    os.remove(filepath)  # Clean up
-    return text
+    try:
+        file.save(temp_path)
+        
+        # Extract text based on file type
+        ext = filename.rsplit('.', 1)[1].lower()
+        content = ""
+        
+        if ext == 'txt':
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        elif ext == 'pdf':
+            with open(temp_path, 'rb') as f:
+                pdf = PyPDF2.PdfReader(f)
+                for page in pdf.pages:
+                    content += page.extract_text() + "\n"
+        elif ext == 'docx':
+            # Add docx handling if needed
+            pass
+            
+        return content
+    except Exception as e:
+        logger.error(f"Error extracting text from file: {str(e)}")
+        raise
+    finally:
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 def generate_presentation_content(topic, source_content=None):
     system_prompt = """You are a presentation expert. Create a detailed presentation with 5 slides. 
@@ -357,18 +379,15 @@ def generate():
         # Handle file upload
         source_content = None
         if 'file' in request.files:
-            file = request.files['file']
-            if file and file.filename:
-                # Save uploaded file to temp directory
-                filename = secure_filename(file.filename)
-                filepath = os.path.join(UPLOAD_FOLDER, filename)
-                file.save(filepath)
+            uploaded_file = request.files['file']
+            if uploaded_file and uploaded_file.filename:
                 try:
-                    source_content = extract_text_from_file(filepath)
-                finally:
-                    # Clean up uploaded file
-                    if os.path.exists(filepath):
-                        os.remove(filepath)
+                    source_content = extract_text_from_file(uploaded_file)
+                except ValueError as e:
+                    return jsonify({'error': str(e)}), 400
+                except Exception as e:
+                    logger.error(f"File upload error: {str(e)}")
+                    return jsonify({'error': 'Error processing uploaded file'}), 500
         
         # Handle custom styles
         custom_styles_json = request.form.get('customStyles')
