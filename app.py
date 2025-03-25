@@ -3,8 +3,8 @@ from flask_cors import CORS
 import openai
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_AUTO_SIZE
+from pptx.dml.color import RGBColor
 import os
 from dotenv import load_dotenv
 import tempfile
@@ -16,17 +16,19 @@ import re
 load_dotenv()
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
+if not openai.api_key:
+    raise ValueError("No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-TEMP_DIR = "temp_presentations"
-UPLOAD_FOLDER = "uploads"
+# Use system temp directory for files
+TEMP_DIR = tempfile.gettempdir()
+UPLOAD_FOLDER = os.path.join(TEMP_DIR, "uploads")
 ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx'}
 
-# Create necessary directories
-for dir_path in [TEMP_DIR, UPLOAD_FOLDER]:
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
+# Ensure directories exist
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -295,15 +297,22 @@ def create_ppt(content, template='modern', custom_styles=None):
                     for para in content_frame.paragraphs:
                         para.font.size = current_font_size
 
-    # Save to temporary file
+    # Save to temporary file with unique name
     temp_file = os.path.join(TEMP_DIR, f"presentation_{hash(str(content))}.pptx")
-    prs.save(temp_file)
-    return temp_file
+    try:
+        prs.save(temp_file)
+        return os.path.basename(temp_file)
+    except Exception as e:
+        app.logger.error(f"Error saving presentation: {str(e)}")
+        raise
 
 @app.route('/')
 def index():
-    color_schemes_json = jsonify(COLOR_SCHEMES)
-    return render_template('index.html', color_schemes=COLOR_SCHEMES)
+    try:
+        return render_template('index.html', color_schemes=COLOR_SCHEMES)
+    except Exception as e:
+        app.logger.error(f"Error rendering index: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/generate', methods=['POST'])
 def generate():
@@ -317,7 +326,16 @@ def generate():
         if 'file' in request.files:
             file = request.files['file']
             if file and file.filename:
-                source_content = extract_text_from_file(file)
+                # Save uploaded file to temp directory
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                file.save(filepath)
+                try:
+                    source_content = extract_text_from_file(filepath)
+                finally:
+                    # Clean up uploaded file
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
         
         # Handle custom styles
         custom_styles_json = request.form.get('customStyles')
@@ -351,8 +369,12 @@ def generate():
 @app.route('/download/<filename>')
 def download(filename):
     try:
+        file_path = os.path.join(TEMP_DIR, filename)
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 404
+            
         return send_file(
-            os.path.join(TEMP_DIR, filename),
+            file_path,
             as_attachment=True,
             download_name='presentation.pptx',
             mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
@@ -361,7 +383,10 @@ def download(filename):
         app.logger.error(f"Error downloading file: {str(e)}")
         return jsonify({'error': 'File not found'}), 404
 
+@app.errorhandler(500)
+def internal_error(error):
+    app.logger.error(f"Internal error: {str(error)}")
+    return jsonify({'error': 'Internal server error'}), 500
+
 if __name__ == '__main__':
-    # Ensure temp directory exists
-    os.makedirs(TEMP_DIR, exist_ok=True)
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
