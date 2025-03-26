@@ -41,16 +41,6 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Predefined color schemes
 COLOR_SCHEMES = {
-    'professional': {
-        'background': {
-            'type': 'solid',
-            'color': 'FFFFFF',
-            'pattern': None
-        },
-        'title': '1F497D',
-        'text': '000000',
-        'accent': '4F81BD'
-    },
     'modern': {
         'background': {
             'type': 'gradient',
@@ -60,27 +50,6 @@ COLOR_SCHEMES = {
         },
         'title': '2C3E50',
         'text': '34495E',
-        'accent': '3498DB'
-    },
-    'creative': {
-        'background': {
-            'type': 'pattern',
-            'color1': 'FFFFFF',
-            'color2': 'F1C40F',
-            'pattern': 'dots'
-        },
-        'title': 'E74C3C',
-        'text': '2C3E50',
-        'accent': 'F1C40F'
-    },
-    'dark': {
-        'background': {
-            'type': 'solid',
-            'color': '2C3E50',
-            'pattern': None
-        },
-        'title': 'FFFFFF',
-        'text': 'ECF0F1',
         'accent': '3498DB'
     },
     'nature': {
@@ -93,6 +62,28 @@ COLOR_SCHEMES = {
         'title': '2E7D32',
         'text': '1B5E20',
         'accent': '81C784'
+    },
+    'ocean': {
+        'background': {
+            'type': 'gradient',
+            'color1': 'E3F2FD',
+            'color2': 'BBDEFB',
+            'pattern': 'linear'
+        },
+        'title': '1565C0',
+        'text': '0D47A1',
+        'accent': '42A5F5'
+    },
+    'sunset': {
+        'background': {
+            'type': 'gradient',
+            'color1': 'FFF3E0',
+            'color2': 'FFE0B2',
+            'pattern': 'linear'
+        },
+        'title': 'E65100',
+        'text': 'BF360C',
+        'accent': 'FF9800'
     }
 }
 
@@ -178,23 +169,44 @@ Make sure the content flows naturally from one slide to the next. Do not include
     return response.choices[0].message['content']
 
 def apply_background(slide, background_style):
-    fill = slide.background.fill
-    if background_style['type'] == 'solid':
+    """Apply background style to a slide."""
+    try:
+        fill = slide.background.fill
+        bg_type = background_style.get('type', 'solid')
+        
+        if bg_type == 'solid':
+            fill.solid()
+            color = background_style.get('color', 'FFFFFF').replace('#', '')
+            fill.fore_color.rgb = RGBColor.from_string(color)
+            
+        elif bg_type == 'gradient':
+            fill.gradient()
+            gradient_stops = fill.gradient_stops
+            color1 = background_style.get('color1', 'FFFFFF').replace('#', '')
+            color2 = background_style.get('color2', 'E0E0E0').replace('#', '')
+            gradient_stops[0].color.rgb = RGBColor.from_string(color1)
+            gradient_stops[1].color.rgb = RGBColor.from_string(color2)
+            
+        elif bg_type == 'pattern':
+            fill.patterned()
+            color1 = background_style.get('color1', 'FFFFFF').replace('#', '')
+            color2 = background_style.get('color2', 'E0E0E0').replace('#', '')
+            fill.fore_color.rgb = RGBColor.from_string(color1)
+            fill.back_color.rgb = RGBColor.from_string(color2)
+            fill.pattern = 2  # Small grid dots
+            
+    except Exception as e:
+        logger.error(f"Error applying background: {str(e)}")
+        # Use a safe default
         fill.solid()
-        fill.fore_color.rgb = RGBColor.from_string(background_style['color'])
-    elif background_style['type'] == 'gradient':
-        fill.gradient()
-        gradient_stops = fill.gradient_stops
-        gradient_stops[0].color.rgb = RGBColor.from_string(background_style['color1'])
-        gradient_stops[1].color.rgb = RGBColor.from_string(background_style['color2'])
-    elif background_style['type'] == 'pattern':
-        fill.patterned()
-        fill.fore_color.rgb = RGBColor.from_string(background_style['color1'])
-        fill.back_color.rgb = RGBColor.from_string(background_style['color2'])
-        # Pattern types: https://python-pptx.readthedocs.io/en/latest/api/enum/MsoPatternType.html
-        fill.pattern = 2  # Small grid dots
+        fill.fore_color.rgb = RGBColor.from_string('FFFFFF')
 
 def create_ppt(content, template='modern', custom_styles=None):
+    """Create a PowerPoint presentation."""
+    if template not in COLOR_SCHEMES:
+        logger.error(f"Invalid template: {template}")
+        raise ValueError(f"Invalid template: {template}")
+    
     prs = Presentation()
     
     # Set slide width and height (standard 16:9 aspect ratio)
@@ -202,13 +214,33 @@ def create_ppt(content, template='modern', custom_styles=None):
     prs.slide_height = Inches(7.5)
     
     color_scheme = COLOR_SCHEMES[template].copy()
-    if custom_styles:
-        for key, value in custom_styles.items():
-            if key != 'background':
-                color_scheme[key] = value
-            else:
-                color_scheme['background'].update(value)
     
+    # Handle custom styles
+    if custom_styles:
+        try:
+            # Handle title color
+            if 'title' in custom_styles:
+                title_color = custom_styles['title'].replace('#', '')
+                color_scheme['title'] = title_color
+                
+            # Handle text color
+            if 'text' in custom_styles:
+                text_color = custom_styles['text'].replace('#', '')
+                color_scheme['text'] = text_color
+                
+            # Handle background
+            if 'background' in custom_styles:
+                bg = custom_styles['background']
+                if isinstance(bg, dict):
+                    # Ensure background type is valid
+                    if 'type' in bg and bg['type'] in ['solid', 'gradient', 'pattern']:
+                        color_scheme['background'].update(bg)
+                    else:
+                        logger.warning(f"Invalid background type in custom styles: {bg.get('type')}")
+        except Exception as e:
+            logger.error(f"Error processing custom styles: {str(e)}")
+            # Continue with default color scheme
+
     slides = content.split('\n\n')
     for i, slide_content in enumerate(slides):
         if not slide_content.strip():
@@ -372,9 +404,15 @@ def index():
 @app.route('/generate', methods=['POST'])
 def generate():
     try:
-        topic = request.form.get('topic', '')
-        template = request.form.get('template', 'modern')
-        custom_styles = None
+        # Get topic
+        topic = request.form.get('topic', '').strip()
+        if not topic:
+            return jsonify({'error': 'Please provide a topic'}), 400
+            
+        # Get template
+        template = request.form.get('template', 'modern').strip()
+        if template not in COLOR_SCHEMES:
+            return jsonify({'error': f'Invalid template: {template}. Available templates: {", ".join(COLOR_SCHEMES.keys())}'}), 400
         
         # Handle file upload
         source_content = None
@@ -390,33 +428,42 @@ def generate():
                     return jsonify({'error': 'Error processing uploaded file'}), 500
         
         # Handle custom styles
+        custom_styles = None
         custom_styles_json = request.form.get('customStyles')
         if custom_styles_json:
             try:
                 custom_styles = json.loads(custom_styles_json)
+                if not isinstance(custom_styles, dict):
+                    return jsonify({'error': 'Custom styles must be a JSON object'}), 400
             except json.JSONDecodeError:
                 return jsonify({'error': 'Invalid custom styles format'}), 400
         
-        if not topic:
-            return jsonify({'error': 'Please provide a topic'}), 400
-            
         # Generate presentation content
-        content = generate_presentation_content(topic, source_content)
-        if not content:
-            return jsonify({'error': 'Failed to generate presentation content'}), 500
+        try:
+            content = generate_presentation_content(topic, source_content)
+            if not content:
+                return jsonify({'error': 'Failed to generate presentation content'}), 500
+        except Exception as e:
+            logger.error(f"Error generating content: {str(e)}")
+            return jsonify({'error': 'Failed to generate presentation content. Please try again.'}), 500
             
         # Create PowerPoint file
-        filename = create_ppt(content, template, custom_styles)
-        
-        return jsonify({
-            'message': 'Presentation generated successfully',
-            'content': content,
-            'filename': filename
-        })
-        
+        try:
+            filename = create_ppt(content, template, custom_styles)
+            return jsonify({
+                'message': 'Presentation generated successfully',
+                'content': content,
+                'filename': filename
+            })
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            logger.error(f"Error creating PowerPoint: {str(e)}")
+            return jsonify({'error': 'Failed to create PowerPoint file. Please try again.'}), 500
+            
     except Exception as e:
-        logger.error(f"Error generating presentation: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Unexpected error: {str(e)}")
+        return jsonify({'error': 'An unexpected error occurred. Please try again.'}), 500
 
 @app.route('/download/<filename>')
 def download(filename):
