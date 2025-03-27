@@ -1,8 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PPT Generator</title>
     <style>
         body {
@@ -10,184 +8,218 @@
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
         }
         .form-group {
             margin-bottom: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         label {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
+            color: #34495e;
+            font-weight: bold;
         }
-        input[type="text"], select {
+        input[type="text"], textarea, select {
             width: 100%;
             padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            box-sizing: border-box;
         }
-        input[type="color"] {
-            width: 100%;
-            height: 40px;
-            padding: 0;
-            border: none;
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+        .error {
+            color: #e74c3c;
+            display: none;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+        .success {
+            color: #27ae60;
+            display: none;
+            margin-top: 5px;
+            font-size: 14px;
         }
         button {
-            background-color: #1a73e8;
+            background-color: #3498db;
             color: white;
             padding: 10px 20px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             width: 100%;
+            font-size: 16px;
         }
         button:hover {
-            background-color: #1557b0;
+            background-color: #2980b9;
         }
         button:disabled {
-            background-color: #ccc;
+            background-color: #bdc3c7;
             cursor: not-allowed;
         }
-        .error {
-            color: #d32f2f;
-            margin-top: 5px;
-            display: none;
-        }
-        .success {
-            color: #388e3c;
-            margin-top: 5px;
-            display: none;
-        }
-        #loading {
-            display: none;
+        .loading {
             text-align: center;
-            margin-top: 20px;
+            display: none;
+            margin: 10px 0;
         }
-        .background-options {
-            margin-top: 10px;
+        .mode-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
         }
-        .background-option {
-            margin: 5px 0;
+        .mode-button {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #3498db;
+            border-radius: 8px;
+            background: white;
+            color: #3498db;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .mode-button.active {
+            background: #3498db;
+            color: white;
+        }
+        .input-section {
+            display: none;
+        }
+        .input-section.active {
+            display: block;
         }
         #generatedContent {
-            margin-top: 20px;
             white-space: pre-wrap;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .color-input {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .color-input input[type="color"] {
+            width: 50px;
+            height: 40px;
+            padding: 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <div class="max-w-2xl mx-auto">
-            <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">PowerPoint Generator</h1>
-            
-            <div class="bg-white rounded-lg shadow-md p-6 space-y-6">
-                <form id="generateForm" class="space-y-6">
-                    <!-- Topic Input -->
-                    <div class="form-group">
-                        <label for="topic" class="block text-sm font-medium text-gray-700 mb-2">Presentation Topic</label>
-                        <input type="text" id="topic" name="topic" required
-                            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
-                        <div id="topicError" class="error">Please enter a topic</div>
-                    </div>
-
-                    <!-- File Upload -->
-                    <div class="form-group">
-                        <label for="file" class="block text-sm font-medium text-gray-700 mb-2">Source Content (Optional)</label>
-                        <input type="file" id="file" name="file" accept=".txt,.pdf,.docx"
-                            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
-                        <div id="fileError" class="error"></div>
-                        <p class="mt-1 text-sm text-gray-500">Upload a TXT, PDF, or DOCX file to use as source content</p>
-                    </div>
-
-                    <!-- Template Selection -->
-                    <div class="form-group">
-                        <label for="template" class="block text-sm font-medium text-gray-700 mb-2">Select Template</label>
-                        <select id="template" name="template"
-                            class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
-                            <option value="modern">Modern (Gray Gradient)</option>
-                            <option value="nature">Nature (Green Gradient)</option>
-                            <option value="ocean">Ocean (Blue Gradient)</option>
-                            <option value="sunset">Sunset (Orange Gradient)</option>
-                        </select>
-                    </div>
-
-                    <!-- Custom Colors -->
-                    <div class="form-group">
-                        <h3 class="font-medium text-gray-700">Custom Colors (Optional)</h3>
-                        <div>
-                            <label for="titleColor" class="block text-sm text-gray-600 mb-1">Title Color</label>
-                            <input type="color" id="titleColor" name="titleColor" value="#000000"
-                                class="w-full h-10 rounded-md border border-gray-300">
-                        </div>
-                        <div>
-                            <label for="textColor" class="block text-sm text-gray-600 mb-1">Text Color</label>
-                            <input type="color" id="textColor" name="textColor" value="#000000"
-                                class="w-full h-10 rounded-md border border-gray-300">
-                        </div>
-                        
-                        <!-- Background Color Options -->
-                        <div class="background-options">
-                            <label class="block text-sm text-gray-600 mb-1">Background Style</label>
-                            <div class="background-option">
-                                <input type="radio" id="solidColor" name="backgroundStyle" value="solid">
-                                <label for="solidColor">Solid Color</label>
-                                <input type="color" id="backgroundColor" name="backgroundColor" value="#FFFFFF"
-                                    class="ml-2 h-8 w-16 rounded border border-gray-300">
-                            </div>
-                            <div class="background-option">
-                                <input type="radio" id="gradient" name="backgroundStyle" value="gradient" checked>
-                                <label for="gradient">Gradient</label>
-                                <input type="color" id="gradientStart" name="gradientStart" value="#FFFFFF"
-                                    class="ml-2 h-8 w-16 rounded border border-gray-300">
-                                <input type="color" id="gradientEnd" name="gradientEnd" value="#E0E0E0"
-                                    class="h-8 w-16 rounded border border-gray-300">
-                            </div>
-                            <div class="background-option">
-                                <input type="radio" id="pattern" name="backgroundStyle" value="pattern">
-                                <label for="pattern">Pattern</label>
-                                <input type="color" id="patternColor1" name="patternColor1" value="#FFFFFF"
-                                    class="ml-2 h-8 w-16 rounded border border-gray-300">
-                                <input type="color" id="patternColor2" name="patternColor2" value="#E0E0E0"
-                                    class="h-8 w-16 rounded border border-gray-300">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <button id="generateBtn" onclick="generatePresentation()"
-                        class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors">
-                        Generate Presentation
-                    </button>
-                </form>
-
-                <div id="loading" class="hidden mt-4">
-                    <div class="flex items-center justify-center">
-                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                        <span class="ml-2 text-gray-600">Generating presentation...</span>
-                    </div>
-                </div>
-
-                <div id="result" class="hidden mt-4 space-y-4">
-                    <h2 class="text-lg font-semibold mb-2">Generated Content:</h2>
-                    <div id="generatedContent" class="bg-gray-50 p-4 rounded-md text-sm whitespace-pre-line"></div>
-                    <div id="downloadContainer" style="display: none;">
-                        <button onclick="downloadPresentation()">Download PowerPoint</button>
-                    </div>
-                </div>
+<body>
+    <h1>PowerPoint Generator</h1>
+    
+    <div class="mode-selector">
+        <button class="mode-button active" onclick="switchMode('prompt')" id="promptModeBtn">Generate from Prompt</button>
+        <button class="mode-button" onclick="switchMode('content')" id="contentModeBtn">Generate from Content</button>
+    </div>
+    
+    <div id="promptSection" class="input-section active">
+        <div class="form-group">
+            <label for="prompt">Enter your presentation topic or prompt:</label>
+            <input type="text" id="prompt" name="prompt" placeholder="e.g., 'The Future of Artificial Intelligence'" required>
+            <div id="promptError" class="error">Please enter a topic or prompt</div>
+        </div>
+    </div>
+    
+    <div id="contentSection" class="input-section">
+        <div class="form-group">
+            <label for="content">Paste your article or notes:</label>
+            <textarea id="content" name="content" placeholder="Paste your content here..." required></textarea>
+            <div id="contentError" class="error">Please enter some content</div>
+        </div>
+    </div>
+    
+    <div class="form-group">
+        <label for="template">Select Template:</label>
+        <select id="template" name="template">
+            <option value="modern">Modern (Gray Gradient)</option>
+            <option value="nature">Nature (Green Gradient)</option>
+            <option value="ocean">Ocean (Blue Gradient)</option>
+            <option value="sunset">Sunset (Orange Gradient)</option>
+        </select>
+    </div>
+    
+    <div class="form-group">
+        <h3>Custom Colors (Optional)</h3>
+        <div class="color-input">
+            <label for="titleColor">Title Color:</label>
+            <input type="color" id="titleColor" name="titleColor" value="#000000">
+        </div>
+        <div class="color-input">
+            <label for="textColor">Text Color:</label>
+            <input type="color" id="textColor" name="textColor" value="#000000">
+        </div>
+        
+        <div class="background-options">
+            <label>Background Style:</label>
+            <div>
+                <input type="radio" id="solidColor" name="backgroundStyle" value="solid">
+                <label for="solidColor">Solid Color</label>
+                <input type="color" id="backgroundColor" name="backgroundColor" value="#FFFFFF">
+            </div>
+            <div>
+                <input type="radio" id="gradient" name="backgroundStyle" value="gradient" checked>
+                <label for="gradient">Gradient</label>
+                <input type="color" id="gradientStart" name="gradientStart" value="#FFFFFF">
+                <input type="color" id="gradientEnd" name="gradientEnd" value="#E0E0E0">
+            </div>
+            <div>
+                <input type="radio" id="pattern" name="backgroundStyle" value="pattern">
+                <label for="pattern">Pattern</label>
+                <input type="color" id="patternColor1" name="patternColor1" value="#FFFFFF">
+                <input type="color" id="patternColor2" name="patternColor2" value="#E0E0E0">
             </div>
         </div>
+    </div>
+    
+    <button id="generateBtn" onclick="generatePresentation()">Generate Presentation</button>
+    <div id="loading" class="loading">🔄 Generating presentation...</div>
+    <div id="error" class="error"></div>
+    <div id="success" class="success"></div>
+    
+    <div id="generatedContent"></div>
+    <div id="downloadContainer" style="display: none;">
+        <button onclick="downloadPresentation()">Download PowerPoint</button>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            let currentMode = 'prompt';
             let currentFilename = null;
-            const generateBtn = document.getElementById('generateBtn');
-            const loadingDiv = document.getElementById('loading');
-            const errorDiv = document.getElementById('error');
-            const successDiv = document.getElementById('success');
-            const generatedContentDiv = document.getElementById('generatedContent');
-            const downloadContainer = document.getElementById('downloadContainer');
-            const topicInput = document.getElementById('topic');
-            const fileInput = document.getElementById('file');
             
-            function showError(message) {
+            window.switchMode = function(mode) {
+                currentMode = mode;
+                
+                // Update button states
+                document.getElementById('promptModeBtn').classList.toggle('active', mode === 'prompt');
+                document.getElementById('contentModeBtn').classList.toggle('active', mode === 'content');
+                
+                // Show/hide sections
+                document.getElementById('promptSection').classList.toggle('active', mode === 'prompt');
+                document.getElementById('contentSection').classList.toggle('active', mode === 'content');
+                
+                // Clear errors
+                document.getElementById('promptError').style.display = 'none';
+                document.getElementById('contentError').style.display = 'none';
+            };
+            
+            window.showError = function(message) {
+                const errorDiv = document.getElementById('error');
                 if (errorDiv) {
                     errorDiv.textContent = message;
                     errorDiv.style.display = 'block';
@@ -195,9 +227,10 @@
                         errorDiv.style.display = 'none';
                     }, 5000);
                 }
-            }
+            };
             
-            function showSuccess(message) {
+            window.showSuccess = function(message) {
+                const successDiv = document.getElementById('success');
                 if (successDiv) {
                     successDiv.textContent = message;
                     successDiv.style.display = 'block';
@@ -205,28 +238,37 @@
                         successDiv.style.display = 'none';
                     }, 5000);
                 }
-            }
+            };
             
             window.generatePresentation = async function() {
-                if (!topicInput || !generateBtn || !loadingDiv) return;
+                const generateBtn = document.getElementById('generateBtn');
+                const loadingDiv = document.getElementById('loading');
+                const generatedContentDiv = document.getElementById('generatedContent');
+                const downloadContainer = document.getElementById('downloadContainer');
                 
-                const topic = topicInput.value.trim();
-                if (!topic) {
-                    showError('Please enter a topic');
-                    return;
+                // Validate input based on current mode
+                let input;
+                if (currentMode === 'prompt') {
+                    input = document.getElementById('prompt').value.trim();
+                    if (!input) {
+                        document.getElementById('promptError').style.display = 'block';
+                        return;
+                    }
+                } else {
+                    input = document.getElementById('content').value.trim();
+                    if (!input) {
+                        document.getElementById('contentError').style.display = 'block';
+                        return;
+                    }
                 }
                 
                 generateBtn.disabled = true;
                 loadingDiv.style.display = 'block';
                 
                 const formData = new FormData();
-                formData.append('topic', topic);
+                formData.append('mode', currentMode);
+                formData.append('input', input);
                 formData.append('template', document.getElementById('template').value);
-                
-                // Handle file upload
-                if (fileInput && fileInput.files.length > 0) {
-                    formData.append('file', fileInput.files[0]);
-                }
                 
                 // Add custom styles
                 const customStyles = {
@@ -243,8 +285,8 @@
                         customStyles.background.color = document.getElementById('backgroundColor').value;
                     } else if (style === 'gradient') {
                         customStyles.background.type = 'gradient';
-                        customStyles.background.start = document.getElementById('gradientStart').value;
-                        customStyles.background.end = document.getElementById('gradientEnd').value;
+                        customStyles.background.color1 = document.getElementById('gradientStart').value;
+                        customStyles.background.color2 = document.getElementById('gradientEnd').value;
                     } else if (style === 'pattern') {
                         customStyles.background.type = 'pattern';
                         customStyles.background.color1 = document.getElementById('patternColor1').value;
