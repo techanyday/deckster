@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-100 py-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center">
+            <h2 class="text-3xl font-extrabold text-gray-900 sm:text-4xl">
+                Choose Your Plan
+            </h2>
+            <p class="mt-4 text-xl text-gray-600">
+                Select the perfect plan for your presentation needs
+            </p>
+        </div>
+
+        <div class="mt-16 space-y-12 lg:space-y-0 lg:grid lg:grid-cols-3 lg:gap-x-8">
+            <!-- Free Plan -->
+            <div class="relative p-8 bg-white border border-gray-200 rounded-2xl shadow-sm flex flex-col">
+                <div class="flex-1">
+                    <h3 class="text-xl font-semibold text-gray-900">Starter</h3>
+                    <p class="mt-4 flex items-baseline text-gray-900">
+                        <span class="text-5xl font-extrabold tracking-tight">$0</span>
+                        <span class="ml-1 text-xl font-semibold">/month</span>
+                    </p>
+                    <p class="mt-6 text-gray-500">Perfect for trying out our service</p>
+
+                    <ul class="mt-6 space-y-6">
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">3 slides per presentation</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">3 presentations per week</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">Basic themes</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">PPTX download</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <a href="#" 
+                   class="bg-gray-50 text-gray-800 hover:bg-gray-100 mt-8 block w-full py-3 px-6 border border-gray-300 rounded-md text-center font-medium">
+                    Current Plan
+                </a>
+            </div>
+
+            <!-- Pro Plan -->
+            <div class="relative p-8 bg-white border border-gray-200 rounded-2xl shadow-sm flex flex-col">
+                <div class="flex-1">
+                    <h3 class="text-xl font-semibold text-gray-900">Creator</h3>
+                    <p class="mt-4 flex items-baseline text-gray-900">
+                        <span class="text-5xl font-extrabold tracking-tight">$9.99</span>
+                        <span class="ml-1 text-xl font-semibold">/month</span>
+                    </p>
+                    <p class="mt-6 text-gray-500">For regular content creators</p>
+
+                    <ul class="mt-6 space-y-6">
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">10 slides per presentation</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">20 presentations per month</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">Premium themes</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">No watermark</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">PPTX + PDF export</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <button onclick="subscribe('pro')"
+                        class="bg-blue-600 text-white hover:bg-blue-700 mt-8 block w-full py-3 px-6 border border-transparent rounded-md text-center font-medium">
+                    Subscribe Now
+                </button>
+            </div>
+
+            <!-- Business Plan -->
+            <div class="relative p-8 bg-white border border-gray-200 rounded-2xl shadow-sm flex flex-col">
+                <div class="flex-1">
+                    <h3 class="text-xl font-semibold text-gray-900">Professional</h3>
+                    <p class="mt-4 flex items-baseline text-gray-900">
+                        <span class="text-5xl font-extrabold tracking-tight">$24.99</span>
+                        <span class="ml-1 text-xl font-semibold">/month</span>
+                    </p>
+                    <p class="mt-6 text-gray-500">For teams and businesses</p>
+
+                    <ul class="mt-6 space-y-6">
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">30 slides per presentation</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">50 presentations per month</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">Custom branding</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">Team sharing</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">Analytics dashboard</span>
+                        </li>
+                        <li class="flex">
+                            <span class="text-green-500">✓</span>
+                            <span class="ml-3">All Pro features</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <button onclick="subscribe('business')"
+                        class="bg-blue-600 text-white hover:bg-blue-700 mt-8 block w-full py-3 px-6 border border-transparent rounded-md text-center font-medium">
+                    Subscribe Now
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<script>
+function subscribe(plan) {
+    fetch('/subscribe', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ plan: plan })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Redirect to Paystack checkout
+            window.location.href = data.authorization_url;
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred. Please try again.');
+    });
+}
+</script>
+{% endblock %}

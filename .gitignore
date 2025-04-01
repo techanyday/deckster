@@ -1,6 +1,33 @@
-.env
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Database
+*.db
+*.sqlite3
+
+# Temporary files
+tmp/
 temp/
-.DS_Store
+*.tmp
+
+# IDE
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Generated files
+*.pptx
+*.pdf

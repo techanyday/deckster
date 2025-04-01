@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
 from flask_cors import CORS
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 import openai
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -13,22 +14,85 @@ import requests
 from io import BytesIO
 from PIL import Image
 import base64
+from datetime import datetime, timedelta
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from models import db, User, Presentation, SubscriptionPlan
+from config import Config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-openai.api_key = os.getenv('OPENAI_API_KEY')
-
-if not openai.api_key:
-    logger.error("No OpenAI API key found")
-    raise ValueError("No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
-
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+app.config.from_object(Config)
+CORS(app)
+db.init_app(app)
+
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+def check_user_limits(user):
+    """Check if user has reached their presentation limits."""
+    if user.subscription_type == 'free':
+        # Check weekly limit for free users
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        weekly_count = Presentation.query.filter(
+            Presentation.user_id == user.id,
+            Presentation.created_at >= week_ago
+        ).count()
+        return weekly_count < Config.FREE_WEEKLY_LIMIT
+    elif user.subscription_type == 'pro':
+        # Check monthly limit for pro users
+        month_ago = datetime.utcnow() - timedelta(days=30)
+        monthly_count = Presentation.query.filter(
+            Presentation.user_id == user.id,
+            Presentation.created_at >= month_ago
+        ).count()
+        return monthly_count < Config.PRO_MONTHLY_LIMIT
+    elif user.subscription_type == 'business':
+        month_ago = datetime.utcnow() - timedelta(days=30)
+        monthly_count = Presentation.query.filter(
+            Presentation.user_id == user.id,
+            Presentation.created_at >= month_ago
+        ).count()
+        return monthly_count < Config.BUSINESS_MONTHLY_LIMIT
+    return False
+
+def get_max_slides(user):
+    """Get maximum allowed slides based on user's subscription."""
+    return SubscriptionPlan.PLANS[user.subscription_type]['max_slides']
+
+def add_watermark(prs):
+    """Add watermark to presentation if user is on free plan."""
+    for slide in prs.slides:
+        left = Inches(0.5)
+        top = prs.slide_height - Inches(0.5)
+        width = Inches(4)
+        height = Inches(0.3)
+        
+        txBox = slide.shapes.add_textbox(left, top, width, height)
+        tf = txBox.text_frame
+        tf.text = "Created with PowerPoint Generator"
+        tf.paragraphs[0].font.size = Pt(10)
+        tf.paragraphs[0].font.color.rgb = RGBColor(128, 128, 128)
+
+def verify_paystack_transaction(reference):
+    """Verify Paystack transaction."""
+    url = f"https://api.paystack.co/transaction/verify/{reference}"
+    headers = {
+        "Authorization": f"Bearer {app.config['PAYSTACK_SECRET_KEY']}",
+        "Content-Type": "application/json"
+    }
+    response = requests.get(url, headers=headers)
+    return response.json()
 
 def generate_image(prompt):
     """Generate an image using DALL-E 3."""
@@ -275,16 +339,149 @@ def create_ppt(content):
 @app.route('/')
 def index():
     """Render the main page."""
+    return render_template('index.html',
+                         plans=SubscriptionPlan.PLANS,
+                         paystack_public_key=app.config['PAYSTACK_PUBLIC_KEY'])
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    
+    if User.query.filter_by(email=data['email']).first():
+        return jsonify({'error': 'Email already registered'}), 400
+        
+    user = User(
+        email=data['email'],
+        name=data['name'],
+        password_hash=generate_password_hash(data['password'])
+    )
+    db.session.add(user)
+    db.session.commit()
+    
+    login_user(user)
+    return jsonify({'message': 'Registration successful'})
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = User.query.filter_by(email=data['email']).first()
+    
+    if user and check_password_hash(user.password_hash, data['password']):
+        login_user(user)
+        return jsonify({'message': 'Login successful'})
+    
+    return jsonify({'error': 'Invalid credentials'}), 401
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
+
+@app.route('/subscribe', methods=['POST'])
+@login_required
+def subscribe():
+    data = request.get_json()
+    plan = data.get('plan')
+    
+    if plan not in SubscriptionPlan.PLANS:
+        return jsonify({'error': 'Invalid plan'}), 400
+    
     try:
-        return render_template('index.html')
+        # Create Paystack transaction
+        url = "https://api.paystack.co/transaction/initialize"
+        headers = {
+            "Authorization": f"Bearer {app.config['PAYSTACK_SECRET_KEY']}",
+            "Content-Type": "application/json"
+        }
+        
+        plan_id = app.config['PAYSTACK_PLAN_IDS'].get(f'{plan}_monthly')
+        if not plan_id:
+            return jsonify({'error': 'Invalid plan ID'}), 400
+            
+        payload = {
+            "email": current_user.email,
+            "plan": plan_id,
+            "currency": "USD",  # Specify USD currency
+            "callback_url": request.host_url + 'payment/verify'
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        data = response.json()
+        
+        if data['status']:
+            return jsonify({
+                'status': 'success',
+                'authorization_url': data['data']['authorization_url']
+            })
+        else:
+            return jsonify({'error': 'Failed to initialize transaction'}), 500
+            
     except Exception as e:
-        logger.error(f"Error rendering index: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logger.error(f"Error creating payment: {str(e)}")
+        return jsonify({'error': 'Unable to process payment'}), 500
+
+@app.route('/payment/verify')
+@login_required
+def verify_payment():
+    reference = request.args.get('reference')
+    if not reference:
+        return jsonify({'error': 'No reference provided'}), 400
+        
+    try:
+        # Verify the transaction
+        verification = verify_paystack_transaction(reference)
+        
+        if verification['status'] and verification['data']['status'] == 'success':
+            # Update user subscription
+            plan_code = verification['data']['plan']['plan_code']
+            
+            # Find the plan type from the plan code
+            for plan_type, code in app.config['PAYSTACK_PLAN_IDS'].items():
+                if code == plan_code:
+                    current_user.subscription_type = plan_type.replace('_monthly', '')
+                    db.session.commit()
+                    flash('Subscription updated successfully!')
+                    break
+                    
+            return redirect(url_for('index'))
+        else:
+            flash('Payment verification failed!')
+            return redirect(url_for('index'))
+            
+    except Exception as e:
+        logger.error(f"Error verifying payment: {str(e)}")
+        flash('Error verifying payment!')
+        return redirect(url_for('index'))
+
+@app.route('/pricing')
+def pricing():
+    """Show pricing page."""
+    return render_template('pricing.html',
+                         plans=SubscriptionPlan.PLANS,
+                         paystack_public_key=app.config['PAYSTACK_PUBLIC_KEY'])
+
+@app.route('/payment/success')
+@login_required
+def payment_success():
+    """Handle successful payment."""
+    return render_template('payment_success.html')
+
+@app.route('/payment/failed')
+@login_required
+def payment_failed():
+    """Handle failed payment."""
+    return render_template('payment_failed.html')
 
 @app.route('/generate', methods=['POST'])
+@login_required
 def generate():
     """Generate a presentation from prompt or content."""
     try:
+        # Check user limits
+        if not check_user_limits(current_user):
+            return jsonify({'error': 'You have reached your presentation limit'}), 403
+        
         # Get generation mode and input
         mode = request.form.get('mode', '').strip()
         if mode not in ['prompt', 'content']:
@@ -293,12 +490,18 @@ def generate():
         input_text = request.form.get('input', '').strip()
         if not input_text:
             return jsonify({'error': 'Please provide input text'}), 400
-            
+        
         # Generate presentation content
         try:
             content = generate_presentation_content(mode, input_text)
             if not content:
                 return jsonify({'error': 'Failed to generate presentation content'}), 500
+                
+            # Check slide count
+            slides = content.split('\n\n')
+            max_slides = get_max_slides(current_user)
+            if len(slides) > max_slides:
+                return jsonify({'error': f'Slide count exceeds your plan limit of {max_slides} slides'}), 403
         except Exception as e:
             logger.error(f"Error generating content: {str(e)}")
             return jsonify({'error': 'Failed to generate presentation content. Please try again.'}), 500
@@ -306,6 +509,18 @@ def generate():
         # Create PowerPoint file
         try:
             filename = create_ppt(content)
+            
+            # Save presentation record
+            presentation = Presentation(
+                title=slides[0].split('\n')[0].strip(),
+                content=content,
+                slides_count=len(slides),
+                file_path=filename,
+                user_id=current_user.id
+            )
+            db.session.add(presentation)
+            db.session.commit()
+            
             return jsonify({
                 'message': 'Presentation generated successfully',
                 'content': content,
@@ -320,14 +535,28 @@ def generate():
         return jsonify({'error': 'An unexpected error occurred. Please try again.'}), 500
 
 @app.route('/download/<filename>')
+@login_required
 def download(filename):
     """Download a generated presentation."""
     try:
+        # Verify the presentation belongs to the user
+        presentation = Presentation.query.filter_by(
+            file_path=filename,
+            user_id=current_user.id
+        ).first()
+        
+        if not presentation:
+            return jsonify({'error': 'Presentation not found'}), 404
+        
         file_path = os.path.join(tempfile.gettempdir(), filename)
         if not os.path.exists(file_path):
             return jsonify({'error': 'File not found'}), 404
             
-        return send_file(file_path, as_attachment=True, download_name='presentation.pptx')
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name='presentation.pptx'
+        )
     except Exception as e:
         logger.error(f"Error downloading file: {str(e)}")
         return jsonify({'error': 'Error downloading file'}), 500
@@ -343,14 +572,20 @@ def health_check():
         if not os.path.exists(tempfile.gettempdir()) or not os.access(tempfile.gettempdir(), os.W_OK):
             raise ValueError("Temp directory not accessible")
             
+        # Check database connection
+        db.session.execute('SELECT 1')
+            
         return jsonify({
             'status': 'healthy',
-            'temp_dir': os.path.exists(tempfile.gettempdir())
+            'temp_dir': os.path.exists(tempfile.gettempdir()),
+            'database': 'connected'
         })
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)

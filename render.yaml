@@ -10,6 +10,18 @@ services:
         value: 3.10.0
       - key: OPENAI_API_KEY
         sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///app.db
+      - key: PAYSTACK_PLAN_PRO_MONTHLY
+        sync: false
+      - key: PAYSTACK_PLAN_BUSINESS_MONTHLY
+        sync: false
     healthCheckPath: /
     autoDeploy: true
     disk:
