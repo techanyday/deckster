@@ -1,4 +1,4 @@
-Flask==2.0.1
+Flask==2.2.5
 flask-sqlalchemy==3.0.2
 flask-login==0.6.2
 flask-migrate==4.0.4
