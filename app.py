@@ -17,18 +17,24 @@ import base64
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from models import db, User, Presentation, SubscriptionPlan
-from config import Config
+from models import User, Presentation, SubscriptionPlan
+from flask_sqlalchemy import SQLAlchemy
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Flask app
+# Initialize Flask app and load config
 app = Flask(__name__)
-app.config.from_object(Config)
+app.config.update(
+    SQLALCHEMY_DATABASE_URI='sqlite:///app.db',
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SECRET_KEY='dev-secret-key-123'
+)
+
+# Initialize extensions
+db = SQLAlchemy(app)
 CORS(app)
-db.init_app(app)
 
 # Initialize Flask-Login
 login_manager = LoginManager()
@@ -48,7 +54,7 @@ def check_user_limits(user):
             Presentation.user_id == user.id,
             Presentation.created_at >= week_ago
         ).count()
-        return weekly_count < Config.FREE_WEEKLY_LIMIT
+        return weekly_count < 3  # FREE_WEEKLY_LIMIT
     elif user.subscription_type == 'pro':
         # Check monthly limit for pro users
         month_ago = datetime.utcnow() - timedelta(days=30)
@@ -56,15 +62,14 @@ def check_user_limits(user):
             Presentation.user_id == user.id,
             Presentation.created_at >= month_ago
         ).count()
-        return monthly_count < Config.PRO_MONTHLY_LIMIT
-    elif user.subscription_type == 'business':
+        return monthly_count < 20  # PRO_MONTHLY_LIMIT
+    else:  # business
         month_ago = datetime.utcnow() - timedelta(days=30)
         monthly_count = Presentation.query.filter(
             Presentation.user_id == user.id,
             Presentation.created_at >= month_ago
         ).count()
-        return monthly_count < Config.BUSINESS_MONTHLY_LIMIT
-    return False
+        return monthly_count < 50  # BUSINESS_MONTHLY_LIMIT
 
 def get_max_slides(user):
     """Get maximum allowed slides based on user's subscription."""
@@ -352,9 +357,10 @@ def register():
         
     user = User(
         email=data['email'],
-        name=data['name'],
-        password_hash=generate_password_hash(data['password'])
+        name=data['name']
     )
+    user.set_password(data['password'])
+    
     db.session.add(user)
     db.session.commit()
     
@@ -366,17 +372,17 @@ def login():
     data = request.get_json()
     user = User.query.filter_by(email=data['email']).first()
     
-    if user and check_password_hash(user.password_hash, data['password']):
+    if user and user.check_password(data['password']):
         login_user(user)
         return jsonify({'message': 'Login successful'})
     
-    return jsonify({'error': 'Invalid credentials'}), 401
+    return jsonify({'error': 'Invalid email or password'}), 401
 
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('index'))
+    return jsonify({'message': 'Logged out successfully'})
 
 @app.route('/subscribe', methods=['POST'])
 @login_required
@@ -476,7 +482,6 @@ def payment_failed():
 @app.route('/generate', methods=['POST'])
 @login_required
 def generate():
-    """Generate a presentation from prompt or content."""
     try:
         # Check user limits
         if not check_user_limits(current_user):
@@ -573,7 +578,7 @@ def health_check():
             raise ValueError("Temp directory not accessible")
             
         # Check database connection
-        db.session.execute('SELECT 1')
+        db.session.execute(db.text('SELECT 1'))
             
         return jsonify({
             'status': 'healthy',
@@ -587,5 +592,4 @@ def health_check():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True, host='127.0.0.1', port=5000)

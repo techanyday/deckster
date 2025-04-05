@@ -1,5 +1,5 @@
 Flask==2.0.1
-flask-sqlalchemy==3.0.2
+flask-sqlalchemy==2.5.1
 flask-login==0.6.2
 flask-migrate==4.0.4
 python-dotenv==1.0.0
