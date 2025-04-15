@@ -7,12 +7,15 @@ from utils import check_user_limits, get_max_slides, add_watermark, generate_pre
 # Load environment variables
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # Initialize Flask app and load config
 app = Flask(__name__)
+
+# Configure logging for production
+if os.getenv('ENVIRONMENT') == 'production':
+    logging.basicConfig(level=logging.INFO)
+    gunicorn_logger = logging.getLogger('gunicorn.error')
+    app.logger.handlers = gunicorn_logger.handlers
+    app.logger.setLevel(gunicorn_logger.level)
 
 # Get database URL - default to SQLite for local development
 database_url = os.getenv('DATABASE_URL')
@@ -28,11 +31,21 @@ app.config.update(
 
 # Set OpenAI API key
 import openai
+if not os.getenv('OPENAI_API_KEY'):
+    app.logger.error("OPENAI_API_KEY environment variable is not set!")
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
 # Initialize extensions
 from models import db, User, Presentation, SubscriptionPlan
 db.init_app(app)
+
+# Create database tables
+with app.app_context():
+    try:
+        db.create_all()
+        app.logger.info("Database tables created successfully")
+    except Exception as e:
+        app.logger.error(f"Error creating database tables: {str(e)}")
 
 from flask_cors import CORS
 CORS(app)
@@ -91,7 +104,7 @@ def generate_image(prompt):
         
         return temp_image.name
     except Exception as e:
-        logger.error(f"Error generating image: {str(e)}")
+        app.logger.error(f"Error generating image: {str(e)}")
         return None
 
 def extract_image_prompt(content):
@@ -107,7 +120,7 @@ def extract_image_prompt(content):
         )
         return response.choices[0].message['content'].strip()
     except Exception as e:
-        logger.error(f"Error creating image prompt: {str(e)}")
+        app.logger.error(f"Error creating image prompt: {str(e)}")
         return None
 
 def extract_slide_keywords(content):
@@ -123,7 +136,7 @@ def extract_slide_keywords(content):
         )
         return response.choices[0].message['content'].strip()
     except Exception as e:
-        logger.error(f"Error extracting keywords: {str(e)}")
+        app.logger.error(f"Error extracting keywords: {str(e)}")
         return None
 
 @app.route('/')
@@ -219,7 +232,7 @@ def generate():
             download_name='presentation.pptx'
         )
     except Exception as e:
-        logger.error(f"Error creating presentation: {str(e)}")
+        app.logger.error(f"Error creating presentation: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': 'Failed to create presentation'
@@ -278,7 +291,7 @@ def subscribe():
             }), 500
             
     except Exception as e:
-        logger.error(f"Payment initialization error: {str(e)}")
+        app.logger.error(f"Payment initialization error: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': 'An error occurred while processing your request'
@@ -316,12 +329,10 @@ def payment_callback():
             flash('Payment verification failed', 'error')
             
     except Exception as e:
-        logger.error(f"Payment verification error: {str(e)}")
+        app.logger.error(f"Payment verification error: {str(e)}")
         flash('An error occurred while verifying your payment', 'error')
         
     return redirect(url_for('pricing'))
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
     app.run(debug=True)

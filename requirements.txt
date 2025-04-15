@@ -11,4 +11,5 @@ gunicorn==21.2.0
 flask_cors==3.0.10
 werkzeug==2.3.7
 psycopg2-binary==2.9.9
+gevent==23.9.1
 -e .
