@@ -38,6 +38,10 @@
                 </button>
             </div>
         </form>
+        <div class="mt-4 text-center space-y-2">
+            <a href="{{ url_for('forgot_password') }}" class="block text-sm font-medium text-blue-600 hover:text-blue-500">Forgot your password?</a>
+            <a href="{{ url_for('register') }}" class="block text-sm font-medium text-blue-600 hover:text-blue-500">Don't have an account? Register</a>
+        </div>
         <div id="error" class="mt-2 text-center text-sm text-red-600 hidden"></div>
     </div>
 </div>
