@@ -1,355 +1,327 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>PPT Generator</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        h1 {
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #34495e;
-            font-weight: bold;
-        }
-        input[type="text"], textarea, select {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        textarea {
-            min-height: 150px;
-            resize: vertical;
-        }
-        .error {
-            color: #e74c3c;
-            display: none;
-            margin-top: 5px;
-            font-size: 14px;
-        }
-        .success {
-            color: #27ae60;
-            display: none;
-            margin-top: 5px;
-            font-size: 14px;
-        }
-        button {
-            background-color: #3498db;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            width: 100%;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #2980b9;
-        }
-        button:disabled {
-            background-color: #bdc3c7;
-            cursor: not-allowed;
-        }
-        .loading {
-            text-align: center;
-            display: none;
-            margin: 10px 0;
-        }
-        .mode-selector {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        .mode-button {
-            flex: 1;
-            padding: 15px;
-            border: 2px solid #3498db;
-            border-radius: 8px;
-            background: white;
-            color: #3498db;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .mode-button.active {
-            background: #3498db;
-            color: white;
-        }
-        .input-section {
-            display: none;
-        }
-        .input-section.active {
-            display: block;
-        }
-        #generatedContent {
-            white-space: pre-wrap;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 20px;
-        }
-        .color-input {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .color-input input[type="color"] {
-            width: 50px;
-            height: 40px;
-            padding: 0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-    </style>
-</head>
-<body>
-    <h1>PowerPoint Generator</h1>
-    
+{% extends "base.html" %}
+
+{% block extra_head %}
+<style>
+    .form-group {
+        margin-bottom: 20px;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .form-control {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+    }
+    textarea.form-control {
+        min-height: 150px;
+        resize: vertical;
+    }
+    .error {
+        color: #e74c3c;
+        display: none;
+        margin-top: 5px;
+        font-size: 14px;
+    }
+    .success {
+        color: #27ae60;
+        display: none;
+        margin-top: 5px;
+        font-size: 14px;
+    }
+    .loading {
+        text-align: center;
+        display: none;
+        margin: 10px 0;
+    }
+    .mode-selector {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    .mode-button {
+        flex: 1;
+        padding: 15px;
+        border: 2px solid #3498db;
+        border-radius: 8px;
+        background: white;
+        color: #3498db;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    .mode-button.active {
+        background: #3498db;
+        color: white;
+    }
+    .input-section {
+        display: none;
+    }
+    .input-section.active {
+        display: block;
+    }
+    #generatedContent {
+        white-space: pre-wrap;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin-top: 20px;
+    }
+    .color-input {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .color-input input[type="color"] {
+        width: 50px;
+        height: 40px;
+        padding: 0;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="mode-selector">
         <button class="mode-button active" onclick="switchMode('prompt')" id="promptModeBtn">Generate from Prompt</button>
         <button class="mode-button" onclick="switchMode('content')" id="contentModeBtn">Generate from Content</button>
     </div>
     
-    <div id="promptSection" class="input-section active">
-        <div class="form-group">
-            <label for="prompt">Enter your presentation topic or prompt:</label>
-            <input type="text" id="prompt" name="prompt" placeholder="e.g., 'The Future of Artificial Intelligence'" required>
-            <div id="promptError" class="error">Please enter a topic or prompt</div>
-        </div>
-    </div>
-    
-    <div id="contentSection" class="input-section">
-        <div class="form-group">
-            <label for="content">Paste your article or notes:</label>
-            <textarea id="content" name="content" placeholder="Paste your content here..." required></textarea>
-            <div id="contentError" class="error">Please enter some content</div>
-        </div>
-    </div>
-    
-    <div class="form-group">
-        <label for="template">Select Template:</label>
-        <select id="template" name="template">
-            <option value="modern">Modern (Gray Gradient)</option>
-            <option value="nature">Nature (Green Gradient)</option>
-            <option value="ocean">Ocean (Blue Gradient)</option>
-            <option value="sunset">Sunset (Orange Gradient)</option>
-        </select>
-    </div>
-    
-    <div class="form-group">
-        <h3>Custom Colors (Optional)</h3>
-        <div class="color-input">
-            <label for="titleColor">Title Color:</label>
-            <input type="color" id="titleColor" name="titleColor" value="#000000">
-        </div>
-        <div class="color-input">
-            <label for="textColor">Text Color:</label>
-            <input type="color" id="textColor" name="textColor" value="#000000">
+    <form id="presentationForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        
+        <div id="promptSection" class="input-section active">
+            <div class="form-group">
+                <label class="block text-sm font-medium text-gray-700 mb-2" for="prompt">Enter your presentation topic or prompt:</label>
+                <input type="text" id="prompt" name="prompt" class="form-control" placeholder="e.g., 'The Future of Artificial Intelligence'" required>
+                <div id="promptError" class="error">Please enter a topic or prompt</div>
+            </div>
         </div>
         
-        <div class="background-options">
-            <label>Background Style:</label>
-            <div>
-                <input type="radio" id="solidColor" name="backgroundStyle" value="solid">
-                <label for="solidColor">Solid Color</label>
-                <input type="color" id="backgroundColor" name="backgroundColor" value="#FFFFFF">
-            </div>
-            <div>
-                <input type="radio" id="gradient" name="backgroundStyle" value="gradient" checked>
-                <label for="gradient">Gradient</label>
-                <input type="color" id="gradientStart" name="gradientStart" value="#FFFFFF">
-                <input type="color" id="gradientEnd" name="gradientEnd" value="#E0E0E0">
-            </div>
-            <div>
-                <input type="radio" id="pattern" name="backgroundStyle" value="pattern">
-                <label for="pattern">Pattern</label>
-                <input type="color" id="patternColor1" name="patternColor1" value="#FFFFFF">
-                <input type="color" id="patternColor2" name="patternColor2" value="#E0E0E0">
+        <div id="contentSection" class="input-section">
+            <div class="form-group">
+                <label class="block text-sm font-medium text-gray-700 mb-2" for="content">Paste your article or notes:</label>
+                <textarea id="content" name="content" class="form-control" placeholder="Paste your content here..." required></textarea>
+                <div id="contentError" class="error">Please enter some content</div>
             </div>
         </div>
-    </div>
+
+        <div class="form-group">
+            <label class="block text-sm font-medium text-gray-700 mb-2" for="template">Select Template:</label>
+            <select id="template" name="template" class="form-control">
+                <option value="modern">Modern (Gray Gradient)</option>
+                <option value="nature">Nature (Green Gradient)</option>
+                <option value="ocean">Ocean (Blue Gradient)</option>
+                <option value="sunset">Sunset (Orange Gradient)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Custom Colors (Optional)</h3>
+            <div class="space-y-4">
+                <div class="color-input">
+                    <label class="block text-sm font-medium text-gray-700" for="titleColor">Title Color:</label>
+                    <input type="color" id="titleColor" name="titleColor" value="#000000">
+                </div>
+                <div class="color-input">
+                    <label class="block text-sm font-medium text-gray-700" for="textColor">Text Color:</label>
+                    <input type="color" id="textColor" name="textColor" value="#000000">
+                </div>
+                
+                <div class="background-options mt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Background Style:</label>
+                    <div class="space-y-2">
+                        <div>
+                            <input type="radio" id="solidBg" name="backgroundStyle" value="solid" checked>
+                            <label for="solidBg">Solid Color</label>
+                            <input type="color" id="backgroundColor" name="backgroundColor" value="#FFFFFF">
+                        </div>
+                        <div>
+                            <input type="radio" id="gradientBg" name="backgroundStyle" value="gradient">
+                            <label for="gradientBg">Gradient</label>
+                            <input type="color" id="gradientStart" name="gradientStart" value="#FFFFFF">
+                            <input type="color" id="gradientEnd" name="gradientEnd" value="#E0E0E0">
+                        </div>
+                        <div>
+                            <input type="radio" id="patternBg" name="backgroundStyle" value="pattern">
+                            <label for="patternBg">Pattern</label>
+                            <input type="color" id="patternColor1" name="patternColor1" value="#FFFFFF">
+                            <input type="color" id="patternColor2" name="patternColor2" value="#E0E0E0">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <button type="button" onclick="generatePresentation()" id="generateBtn" class="w-full bg-blue-600 text-white hover:bg-blue-700 py-2 px-4 rounded-md">
+            Generate Presentation
+        </button>
+    </form>
     
-    <button id="generateBtn" onclick="generatePresentation()">Generate Presentation</button>
-    <div id="loading" class="loading">🔄 Generating presentation...</div>
-    <div id="error" class="error"></div>
-    <div id="success" class="success"></div>
+    <div id="loading" class="loading">
+        Generating presentation...
+    </div>
     
     <div id="generatedContent"></div>
-    <div id="downloadContainer" style="display: none;">
-        <button onclick="downloadPresentation()">Download PowerPoint</button>
+    
+    <div id="downloadContainer" style="display: none; margin-top: 20px;">
+        <button onclick="downloadPresentation()" class="w-full bg-green-600 text-white hover:bg-green-700 py-2 px-4 rounded-md">
+            Download Presentation
+        </button>
     </div>
+</div>
+{% endblock %}
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            let currentMode = 'prompt';
-            let currentFilename = null;
+{% block extra_scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        let currentMode = 'prompt';
+        let currentFilename = null;
+        
+        window.switchMode = function(mode) {
+            document.getElementById('promptModeBtn').classList.toggle('active', mode === 'prompt');
+            document.getElementById('contentModeBtn').classList.toggle('active', mode === 'content');
             
-            window.switchMode = function(mode) {
-                currentMode = mode;
-                
-                // Update button states
-                document.getElementById('promptModeBtn').classList.toggle('active', mode === 'prompt');
-                document.getElementById('contentModeBtn').classList.toggle('active', mode === 'content');
-                
-                // Show/hide sections
-                document.getElementById('promptSection').classList.toggle('active', mode === 'prompt');
-                document.getElementById('contentSection').classList.toggle('active', mode === 'content');
-                
-                // Clear errors
-                document.getElementById('promptError').style.display = 'none';
-                document.getElementById('contentError').style.display = 'none';
-            };
+            document.getElementById('promptSection').classList.toggle('active', mode === 'prompt');
+            document.getElementById('contentSection').classList.toggle('active', mode === 'content');
             
-            window.showError = function(message) {
-                const errorDiv = document.getElementById('error');
-                if (errorDiv) {
-                    errorDiv.textContent = message;
-                    errorDiv.style.display = 'block';
-                    setTimeout(() => {
-                        errorDiv.style.display = 'none';
-                    }, 5000);
-                }
-            };
+            currentMode = mode;
             
-            window.showSuccess = function(message) {
-                const successDiv = document.getElementById('success');
-                if (successDiv) {
-                    successDiv.textContent = message;
-                    successDiv.style.display = 'block';
-                    setTimeout(() => {
-                        successDiv.style.display = 'none';
-                    }, 5000);
-                }
-            };
+            // Clear errors
+            document.getElementById('promptError').style.display = 'none';
+            document.getElementById('contentError').style.display = 'none';
+        };
+        
+        function showError(message) {
+            const errorDiv = currentMode === 'prompt' ? 
+                document.getElementById('promptError') : 
+                document.getElementById('contentError');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        function showSuccess(message) {
+            const successDiv = document.createElement('div');
+            successDiv.className = 'success';
+            successDiv.textContent = message;
+            document.getElementById('generatedContent').insertAdjacentElement('beforebegin', successDiv);
+            setTimeout(() => successDiv.remove(), 5000);
+        }
+        
+        window.generatePresentation = async function() {
+            const generateBtn = document.getElementById('generateBtn');
+            const loadingDiv = document.getElementById('loading');
+            const generatedContentDiv = document.getElementById('generatedContent');
+            const downloadContainer = document.getElementById('downloadContainer');
+            const csrfToken = document.querySelector('input[name="csrf_token"]').value;
             
-            window.generatePresentation = async function() {
-                const generateBtn = document.getElementById('generateBtn');
-                const loadingDiv = document.getElementById('loading');
-                const generatedContentDiv = document.getElementById('generatedContent');
-                const downloadContainer = document.getElementById('downloadContainer');
-                
-                // Validate input based on current mode
-                let input;
-                if (currentMode === 'prompt') {
-                    input = document.getElementById('prompt').value.trim();
-                    if (!input) {
-                        document.getElementById('promptError').style.display = 'block';
-                        return;
-                    }
-                } else {
-                    input = document.getElementById('content').value.trim();
-                    if (!input) {
-                        document.getElementById('contentError').style.display = 'block';
-                        return;
-                    }
-                }
-                
-                generateBtn.disabled = true;
-                loadingDiv.style.display = 'block';
-                
-                const formData = new FormData();
-                formData.append('mode', currentMode);
-                formData.append('input', input);
-                formData.append('template', document.getElementById('template').value);
-                
-                // Add custom styles
-                const customStyles = {
-                    title: document.getElementById('titleColor').value,
-                    text: document.getElementById('textColor').value,
-                    background: {}
-                };
-                
-                const backgroundStyle = document.querySelector('input[name="backgroundStyle"]:checked');
-                if (backgroundStyle) {
-                    const style = backgroundStyle.value;
-                    if (style === 'solid') {
-                        customStyles.background.type = 'solid';
-                        customStyles.background.color = document.getElementById('backgroundColor').value;
-                    } else if (style === 'gradient') {
-                        customStyles.background.type = 'gradient';
-                        customStyles.background.color1 = document.getElementById('gradientStart').value;
-                        customStyles.background.color2 = document.getElementById('gradientEnd').value;
-                    } else if (style === 'pattern') {
-                        customStyles.background.type = 'pattern';
-                        customStyles.background.color1 = document.getElementById('patternColor1').value;
-                        customStyles.background.color2 = document.getElementById('patternColor2').value;
-                    }
-                }
-                
-                formData.append('customStyles', JSON.stringify(customStyles));
-                
-                try {
-                    const response = await fetch('/generate', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    const result = await response.json();
-                    
-                    if (!response.ok) {
-                        throw new Error(result.error || 'Failed to generate presentation');
-                    }
-                    
-                    if (generatedContentDiv) {
-                        generatedContentDiv.textContent = result.content;
-                    }
-                    if (downloadContainer) {
-                        downloadContainer.style.display = 'block';
-                    }
-                    currentFilename = result.filename;
-                    showSuccess('Presentation generated successfully!');
-                } catch (error) {
-                    showError(error.message);
-                } finally {
+            generateBtn.disabled = true;
+            if (generatedContentDiv) {
+                generatedContentDiv.textContent = '';
+            }
+            if (downloadContainer) {
+                downloadContainer.style.display = 'none';
+            }
+            
+            let input;
+            if (currentMode === 'prompt') {
+                input = document.getElementById('prompt').value.trim();
+                if (!input) {
+                    showError('Please enter a topic or prompt');
                     generateBtn.disabled = false;
-                    loadingDiv.style.display = 'none';
-                }
-            };
-            
-            window.downloadPresentation = async function() {
-                if (!currentFilename) {
-                    showError('No presentation available for download');
                     return;
                 }
-                
-                try {
-                    const response = await fetch(`/download/${currentFilename}`);
-                    if (!response.ok) {
-                        throw new Error('Failed to download presentation');
-                    }
-                    
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'presentation.pptx';
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                } catch (error) {
-                    showError(error.message);
+            } else {
+                input = document.getElementById('content').value.trim();
+                if (!input) {
+                    showError('Please enter some content');
+                    generateBtn.disabled = false;
+                    return;
                 }
-            };
-        });
-    </script>
-</body>
-</html>
+            }
+            
+            loadingDiv.style.display = 'block';
+            
+            // Get all form data
+            const formData = new FormData(document.getElementById('presentationForm'));
+            formData.append('mode', currentMode);
+            formData.append('input', input);
+            
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const result = await response.json();
+                        throw new Error(result.message || 'Failed to generate presentation');
+                    } else {
+                        throw new Error('Server error occurred');
+                    }
+                }
+                
+                const result = await response.json();
+                
+                if (generatedContentDiv) {
+                    generatedContentDiv.textContent = result.content;
+                }
+                if (downloadContainer) {
+                    downloadContainer.style.display = 'block';
+                }
+                currentFilename = result.filename;
+                showSuccess('Presentation generated successfully!');
+            } catch (error) {
+                console.error('Generation error:', error);
+                showError(error.message);
+            } finally {
+                generateBtn.disabled = false;
+                loadingDiv.style.display = 'none';
+            }
+        };
+        
+        window.downloadPresentation = async function() {
+            if (!currentFilename) {
+                showError('No presentation available for download');
+                return;
+            }
+            
+            try {
+                const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+                const response = await fetch(`/download/${currentFilename}`, {
+                    headers: {
+                        'X-CSRFToken': csrfToken
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to download presentation');
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'presentation.pptx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                console.error('Download error:', error);
+                showError(error.message);
+            }
+        };
+    });
+</script>
+{% endblock %}

@@ -224,60 +224,97 @@ def logout():
 @app.route('/generate', methods=['POST'])
 @login_required
 def generate():
-    if not check_user_limits(current_user):
-        return jsonify({
-            'status': 'error',
-            'message': 'You have reached your presentation limit. Please upgrade your plan.'
-        }), 400
-
-    data = request.get_json()
-    mode = data.get('mode', 'prompt')
-    input_text = data.get('input')
-    
-    if not input_text:
-        return jsonify({
-            'status': 'error',
-            'message': 'No input provided'
-        }), 400
-
-    content = generate_presentation_content(mode, input_text)
-    if not content:
-        return jsonify({
-            'status': 'error',
-            'message': 'Failed to generate presentation content'
-        }), 500
-
     try:
-        prs = create_ppt(content)
+        if not check_user_limits(current_user):
+            return jsonify({
+                'status': 'error',
+                'message': 'You have reached your presentation limit. Please upgrade your plan.'
+            }), 400
+
+        # Get form data
+        mode = request.form.get('mode')
+        input_text = request.form.get('input')
+        template = request.form.get('template', 'modern')
         
-        # Add watermark for free users
-        if current_user.subscription_type == 'free':
-            add_watermark(prs)
-        
-        # Save to temporary file
-        temp_ppt = tempfile.NamedTemporaryFile(delete=False, suffix='.pptx')
-        prs.save(temp_ppt.name)
-        
-        # Save to database
-        presentation = Presentation(
-            title=f"Presentation {datetime.utcnow()}",
-            content=content,
-            file_path=temp_ppt.name,
-            user_id=current_user.id
-        )
-        db.session.add(presentation)
-        db.session.commit()
-        
-        return send_file(
-            temp_ppt.name,
-            as_attachment=True,
-            download_name='presentation.pptx'
-        )
+        if not mode or not input_text:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required fields'
+            }), 400
+
+        # Get custom styles
+        custom_styles = {
+            'title': request.form.get('titleColor', '#000000'),
+            'text': request.form.get('textColor', '#000000'),
+            'background': {}
+        }
+
+        background_style = request.form.get('backgroundStyle', 'solid')
+        if background_style == 'solid':
+            custom_styles['background'] = {
+                'type': 'solid',
+                'color': request.form.get('backgroundColor', '#FFFFFF')
+            }
+        elif background_style == 'gradient':
+            custom_styles['background'] = {
+                'type': 'gradient',
+                'color1': request.form.get('gradientStart', '#FFFFFF'),
+                'color2': request.form.get('gradientEnd', '#E0E0E0')
+            }
+        elif background_style == 'pattern':
+            custom_styles['background'] = {
+                'type': 'pattern',
+                'color1': request.form.get('patternColor1', '#FFFFFF'),
+                'color2': request.form.get('patternColor2', '#E0E0E0')
+            }
+
+        # Generate presentation content
+        content = generate_presentation_content(mode, input_text)
+        if not content:
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to generate presentation content'
+            }), 500
+
+        try:
+            # Create temporary file for the presentation
+            temp_ppt = tempfile.NamedTemporaryFile(delete=False, suffix='.pptx')
+            
+            # Create the presentation with custom styles
+            create_ppt(content, temp_ppt.name, template, custom_styles)
+            
+            # Add watermark if user is on free plan
+            if current_user.subscription_type == 'free':
+                add_watermark(temp_ppt.name)
+            
+            # Save presentation record
+            presentation = Presentation(
+                title=f"Presentation {datetime.utcnow()}",
+                content=content,
+                file_path=temp_ppt.name,
+                user_id=current_user.id
+            )
+            db.session.add(presentation)
+            db.session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'content': content,
+                'filename': os.path.basename(temp_ppt.name)
+            })
+            
+        except Exception as e:
+            app.logger.error(f"Error creating presentation file: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to create presentation file'
+            }), 500
+            
     except Exception as e:
-        app.logger.error(f"Error creating presentation: {str(e)}")
+        app.logger.error(f"Error generating presentation: {str(e)}")
         return jsonify({
             'status': 'error',
-            'message': 'Failed to create presentation'
+            'message': 'An error occurred while generating the presentation'
         }), 500
 
 @app.route('/pricing')
@@ -375,6 +412,41 @@ def payment_callback():
         flash('An error occurred while verifying your payment', 'error')
         
     return redirect(url_for('pricing'))
+
+@app.route('/download/<filename>')
+@login_required
+def download_presentation(filename):
+    try:
+        # Get the presentation from the database
+        presentation = Presentation.query.filter_by(
+            user_id=current_user.id,
+            file_path__contains=filename
+        ).first()
+        
+        if not presentation:
+            return jsonify({
+                'status': 'error',
+                'message': 'Presentation not found'
+            }), 404
+            
+        if not os.path.exists(presentation.file_path):
+            return jsonify({
+                'status': 'error',
+                'message': 'Presentation file not found'
+            }), 404
+            
+        return send_file(
+            presentation.file_path,
+            as_attachment=True,
+            download_name='presentation.pptx'
+        )
+        
+    except Exception as e:
+        app.logger.error(f"Error downloading presentation: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to download presentation'
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
