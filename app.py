@@ -179,19 +179,40 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        data = request.get_json()
-        if User.query.filter_by(email=data.get('email')).first():
-            return jsonify({'status': 'error', 'message': 'Email already registered'}), 400
-        
-        user = User(
-            email=data.get('email'),
-            name=data.get('name')
-        )
-        user.set_password(data.get('password'))
-        db.session.add(user)
-        db.session.commit()
-        login_user(user)
-        return jsonify({'status': 'success'})
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+            
+            email = data.get('email')
+            name = data.get('name')
+            password = data.get('password')
+            
+            if not email or not name or not password:
+                return jsonify({'status': 'error', 'message': 'All fields are required'}), 400
+                
+            if User.query.filter_by(email=email).first():
+                return jsonify({'status': 'error', 'message': 'Email already registered'}), 400
+            
+            try:
+                user = User(
+                    email=email,
+                    name=name
+                )
+                user.set_password(password)
+                db.session.add(user)
+                db.session.commit()
+                login_user(user)
+                return jsonify({'status': 'success'})
+            except Exception as e:
+                db.session.rollback()
+                app.logger.error(f"Database error during registration: {str(e)}")
+                return jsonify({'status': 'error', 'message': 'Error creating user account'}), 500
+                
+        except Exception as e:
+            app.logger.error(f"Registration error: {str(e)}")
+            return jsonify({'status': 'error', 'message': 'An error occurred during registration'}), 500
+            
     return render_template('register.html')
 
 @app.route('/logout')
