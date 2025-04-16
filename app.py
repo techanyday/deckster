@@ -4,6 +4,20 @@ from dotenv import load_dotenv
 import logging
 from utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
 from flask_wtf.csrf import CSRFProtect
+from itsdangerous import URLSafeTimedSerializer
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
+from flask_cors import CORS
+import tempfile
+import requests
+from PIL import Image
+from io import BytesIO
+import openai
 
 # Load environment variables
 load_dotenv()
@@ -28,21 +42,61 @@ app.config.update(
     SQLALCHEMY_DATABASE_URI=database_url or 'sqlite:///app.db',
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SECRET_KEY=os.getenv('SECRET_KEY', 'dev-secret-key-123'),
-    WTF_CSRF_ENABLED=True
+    WTF_CSRF_ENABLED=True,
+    MAIL_SERVER=os.getenv('MAIL_SERVER', 'smtp.gmail.com'),
+    MAIL_PORT=int(os.getenv('MAIL_PORT', '587')),
+    MAIL_USE_TLS=os.getenv('MAIL_USE_TLS', 'True').lower() == 'true',
+    MAIL_USERNAME=os.getenv('MAIL_USERNAME'),
+    MAIL_PASSWORD=os.getenv('MAIL_PASSWORD'),
+    MAIL_DEFAULT_SENDER=os.getenv('MAIL_DEFAULT_SENDER')
 )
 
-# Initialize CSRF protection
-csrf = CSRFProtect(app)
-
-# Set OpenAI API key
-import openai
-if not os.getenv('OPENAI_API_KEY'):
-    app.logger.error("OPENAI_API_KEY environment variable is not set!")
-openai.api_key = os.getenv('OPENAI_API_KEY')
-
 # Initialize extensions
-from models import db, User, Presentation, SubscriptionPlan
-db.init_app(app)
+db = SQLAlchemy(app)
+csrf = CSRFProtect(app)
+ts = URLSafeTimedSerializer(app.config["SECRET_KEY"])
+
+# Initialize login manager
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+# Import models
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128))
+    subscription_type = db.Column(db.String(20), default='free')
+    presentations = db.relationship('Presentation', backref='user', lazy=True)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def get_id(self):
+        return str(self.id)
+
+    @property
+    def is_active(self):
+        return True
+
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
+
+class Presentation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
 # Create database tables
 with app.app_context():
@@ -52,24 +106,14 @@ with app.app_context():
     except Exception as e:
         app.logger.error(f"Error creating database tables: {str(e)}")
 
-from flask_cors import CORS
-CORS(app)
-
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-
-# Import other dependencies
-import tempfile
-from datetime import datetime
-import requests
-from PIL import Image
-from io import BytesIO
-
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+# Set OpenAI API key
+openai.api_key = os.getenv('OPENAI_API_KEY')
+
+CORS(app)
 
 def verify_paystack_transaction(reference):
     """Verify Paystack transaction."""
@@ -143,6 +187,36 @@ def extract_slide_keywords(content):
     except Exception as e:
         app.logger.error(f"Error extracting keywords: {str(e)}")
         return None
+
+def send_password_reset_email(user_email, reset_url):
+    """Send password reset email to user."""
+    try:
+        msg = MIMEMultipart()
+        msg['Subject'] = 'Password Reset Request'
+        msg['From'] = app.config['MAIL_DEFAULT_SENDER']
+        msg['To'] = user_email
+
+        html = f"""
+        <h3>Password Reset Request</h3>
+        <p>To reset your password, please click the link below:</p>
+        <p><a href="{reset_url}">Reset Password</a></p>
+        <p>If you did not request a password reset, please ignore this email.</p>
+        <p>This link will expire in 1 hour.</p>
+        """
+
+        msg.attach(MIMEText(html, 'html'))
+
+        with smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT']) as server:
+            if app.config['MAIL_USE_TLS']:
+                server.starttls()
+            if app.config['MAIL_USERNAME'] and app.config['MAIL_PASSWORD']:
+                server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
+            server.send_message(msg)
+            
+        return True
+    except Exception as e:
+        app.logger.error(f"Error sending password reset email: {str(e)}")
+        return False
 
 @app.route('/')
 @login_required
@@ -319,29 +393,42 @@ def generate():
 
 @app.route('/pricing')
 def pricing():
-    return render_template('pricing.html', plans=SubscriptionPlan.PLANS)
+    return render_template('pricing.html', plans=['free', 'pro', 'business'])
 
 @app.route('/subscribe', methods=['POST'])
 @login_required
 def subscribe():
-    data = request.get_json()
-    plan = data.get('plan')
-    
-    if plan not in ['pro', 'business']:
-        return jsonify({
-            'status': 'error',
-            'message': 'Invalid plan selected'
-        }), 400
-
-    # Get the appropriate plan ID from environment variables
-    plan_id = os.getenv(f'PAYSTACK_PLAN_{plan.upper()}_MONTHLY')
-    if not plan_id:
-        return jsonify({
-            'status': 'error',
-            'message': 'Plan configuration error'
-        }), 500
-
     try:
+        data = request.get_json()
+        plan = data.get('plan')
+        
+        if not plan or plan not in ['free', 'pro', 'business']:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid subscription plan'
+            }), 400
+            
+        if plan == 'free':
+            current_user.subscription_type = 'free'
+            db.session.commit()
+            return jsonify({
+                'status': 'success',
+                'message': 'Successfully subscribed to Free plan'
+            })
+            
+        # Get amount based on plan
+        amounts = {
+            'pro': 2000,  # $20 in cents
+            'business': 5000  # $50 in cents
+        }
+        
+        amount = amounts.get(plan)
+        if not amount:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid plan selected'
+            }), 400
+            
         # Initialize transaction with Paystack
         url = "https://api.paystack.co/transaction/initialize"
         headers = {
@@ -349,31 +436,38 @@ def subscribe():
             "Content-Type": "application/json"
         }
         
+        callback_url = url_for('payment_callback', _external=True)
+        
         payload = {
             "email": current_user.email,
-            "plan": plan_id,
-            "callback_url": url_for('payment_callback', _external=True)
+            "amount": amount,
+            "callback_url": callback_url,
+            "metadata": {
+                "user_id": current_user.id,
+                "plan": plan
+            }
         }
         
         response = requests.post(url, json=payload, headers=headers)
-        response_data = response.json()
         
-        if response_data['status']:
-            return jsonify({
-                'status': 'success',
-                'authorization_url': response_data['data']['authorization_url']
-            })
-        else:
-            return jsonify({
-                'status': 'error',
-                'message': 'Failed to initialize payment'
-            }), 500
-            
-    except Exception as e:
-        app.logger.error(f"Payment initialization error: {str(e)}")
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('status'):
+                return jsonify({
+                    'status': 'success',
+                    'authorization_url': data['data']['authorization_url']
+                })
+                
         return jsonify({
             'status': 'error',
-            'message': 'An error occurred while processing your request'
+            'message': 'Failed to initialize payment'
+        }), 500
+        
+    except Exception as e:
+        app.logger.error(f"Subscription error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while processing your subscription'
         }), 500
 
 @app.route('/payment/callback')
@@ -381,35 +475,29 @@ def subscribe():
 def payment_callback():
     reference = request.args.get('reference')
     if not reference:
-        flash('No reference supplied', 'error')
+        flash('No reference provided')
         return redirect(url_for('pricing'))
-    
+        
     try:
         # Verify the transaction
-        verification = verify_paystack_transaction(reference)
+        response = verify_paystack_transaction(reference)
         
-        if verification['status']:
-            # Update user's subscription
-            data = verification['data']
-            plan_code = data['plan']['plan_code']
+        if response.get('status') and response['data']['status'] == 'success':
+            metadata = response['data']['metadata']
+            plan = metadata.get('plan')
             
-            # Determine subscription type from plan code
-            if plan_code == os.getenv('PAYSTACK_PLAN_PRO_MONTHLY'):
-                current_user.subscription_type = 'pro'
-            elif plan_code == os.getenv('PAYSTACK_PLAN_BUSINESS_MONTHLY'):
-                current_user.subscription_type = 'business'
-                
-            current_user.subscription_reference = reference
-            current_user.subscription_expires = datetime.fromtimestamp(data['paid_at'])
-            db.session.commit()
-            
-            flash('Subscription successful!', 'success')
+            if plan in ['pro', 'business']:
+                current_user.subscription_type = plan
+                db.session.commit()
+                flash(f'Successfully subscribed to {plan.title()} plan!')
+            else:
+                flash('Invalid subscription plan')
         else:
-            flash('Payment verification failed', 'error')
+            flash('Payment verification failed')
             
     except Exception as e:
-        app.logger.error(f"Payment verification error: {str(e)}")
-        flash('An error occurred while verifying your payment', 'error')
+        app.logger.error(f"Payment callback error: {str(e)}")
+        flash('An error occurred while processing your payment')
         
     return redirect(url_for('pricing'))
 
@@ -447,6 +535,67 @@ def download_presentation(filename):
             'status': 'error',
             'message': 'Failed to download presentation'
         }), 500
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            if not data or not data.get('email'):
+                return jsonify({'status': 'error', 'message': 'Email is required'}), 400
+            
+            email = data.get('email')
+            user = User.query.filter_by(email=email).first()
+            
+            if not user:
+                # Don't reveal that the user doesn't exist
+                return jsonify({'status': 'success', 'message': 'If your email exists in our system, you will receive a password reset link shortly.'}), 200
+            
+            # Generate token
+            token = ts.dumps(user.email, salt='password-reset-salt')
+            
+            # Build reset URL
+            reset_url = url_for('reset_password', token=token, _external=True)
+            
+            # Send email
+            if send_password_reset_email(user.email, reset_url):
+                return jsonify({'status': 'success', 'message': 'If your email exists in our system, you will receive a password reset link shortly.'}), 200
+            else:
+                return jsonify({'status': 'error', 'message': 'Failed to send reset email. Please try again later.'}), 500
+                
+        except Exception as e:
+            app.logger.error(f"Password reset request error: {str(e)}")
+            return jsonify({'status': 'error', 'message': 'An error occurred. Please try again later.'}), 500
+            
+    return render_template('forgot_password.html')
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    try:
+        email = ts.loads(token, salt='password-reset-salt', max_age=3600)  # Token expires in 1 hour
+    except:
+        return render_template('reset_password.html', error='Invalid or expired reset link. Please try again.')
+    
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            if not data or not data.get('password'):
+                return jsonify({'status': 'error', 'message': 'New password is required'}), 400
+            
+            user = User.query.filter_by(email=email).first()
+            if not user:
+                return jsonify({'status': 'error', 'message': 'User not found'}), 404
+            
+            user.set_password(data.get('password'))
+            db.session.commit()
+            
+            return jsonify({'status': 'success', 'message': 'Password has been reset successfully. You can now login with your new password.'}), 200
+            
+        except Exception as e:
+            app.logger.error(f"Password reset error: {str(e)}")
+            return jsonify({'status': 'error', 'message': 'An error occurred while resetting your password'}), 500
+            
+    return render_template('reset_password.html', token=token)
 
 if __name__ == '__main__':
     app.run(debug=True)
