@@ -259,23 +259,23 @@ def register():
                 return jsonify({'status': 'error', 'message': 'No data provided'}), 400
             
             email = data.get('email')
-            name = data.get('name')
             password = data.get('password')
             
-            if not email or not name or not password:
-                return jsonify({'status': 'error', 'message': 'All fields are required'}), 400
+            if not email or not password:
+                return jsonify({'status': 'error', 'message': 'Email and password are required'}), 400
                 
+            # Check if user already exists
             if User.query.filter_by(email=email).first():
                 return jsonify({'status': 'error', 'message': 'Email already registered'}), 400
-            
+                
+            # Create new user
             try:
-                user = User(
-                    email=email,
-                    name=name
-                )
+                user = User(email=email)
                 user.set_password(password)
                 db.session.add(user)
                 db.session.commit()
+                
+                # Log the user in
                 login_user(user)
                 return jsonify({'status': 'success'})
             except Exception as e:
