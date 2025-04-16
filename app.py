@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 import logging
 from utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
+from flask_wtf.csrf import CSRFProtect
 
 # Load environment variables
 load_dotenv()
@@ -26,8 +27,12 @@ if database_url and database_url.startswith('postgres://'):
 app.config.update(
     SQLALCHEMY_DATABASE_URI=database_url or 'sqlite:///app.db',
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
-    SECRET_KEY=os.getenv('SECRET_KEY', 'dev-secret-key-123')
+    SECRET_KEY=os.getenv('SECRET_KEY', 'dev-secret-key-123'),
+    WTF_CSRF_ENABLED=True
 )
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
 
 # Set OpenAI API key
 import openai
@@ -147,12 +152,28 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        data = request.get_json()
-        user = User.query.filter_by(email=data.get('email')).first()
-        if user and user.check_password(data.get('password')):
-            login_user(user)
-            return jsonify({'status': 'success'})
-        return jsonify({'status': 'error', 'message': 'Invalid email or password'}), 401
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+            
+            email = data.get('email')
+            password = data.get('password')
+            
+            if not email or not password:
+                return jsonify({'status': 'error', 'message': 'Email and password are required'}), 400
+
+            user = User.query.filter_by(email=email).first()
+            if user and user.check_password(password):
+                login_user(user)
+                return jsonify({'status': 'success'})
+            
+            return jsonify({'status': 'error', 'message': 'Invalid email or password'}), 401
+        except Exception as e:
+            app.logger.error(f"Login error: {str(e)}")
+            return jsonify({'status': 'error', 'message': 'An error occurred during login'}), 500
+    
+    # GET request - render the login template
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
