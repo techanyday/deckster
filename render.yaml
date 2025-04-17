@@ -17,7 +17,9 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        value: sqlite:///app.db
+        fromDatabase:
+          name: ppt-generator-db
+          property: connectionString
       - key: PAYSTACK_PLAN_PRO_MONTHLY
         sync: false
       - key: PAYSTACK_PLAN_BUSINESS_MONTHLY
@@ -28,3 +30,8 @@ services:
       name: temp
       mountPath: /tmp
       sizeGB: 1
+
+  - type: postgres
+    name: ppt-generator-db
+    plan: free
+    ipAllowList: []
