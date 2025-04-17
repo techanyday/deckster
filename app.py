@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask_cors import CORS
 import tempfile
 import requests
@@ -69,6 +69,9 @@ class User(db.Model):
     password_hash = db.Column(db.String(128))
     subscription_type = db.Column(db.String(20), default='free')
     presentations = db.relationship('Presentation', backref='user', lazy=True)
+    email_verified = db.Column(db.Boolean, default=False)
+    verification_token = db.Column(db.String(100), unique=True)
+    token_expiry = db.Column(db.DateTime)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -90,6 +93,11 @@ class User(db.Model):
     @property
     def is_anonymous(self):
         return False
+
+    def generate_verification_token(self):
+        self.verification_token = ts.dumps(self.email, salt='email-verification-salt')
+        self.token_expiry = datetime.utcnow() + timedelta(hours=24)
+        return self.verification_token
 
 class Presentation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -219,6 +227,30 @@ def send_password_reset_email(user_email, reset_url):
         app.logger.error(f"Error sending password reset email: {str(e)}")
         return False
 
+def send_verification_email(user_email, verification_url):
+    """Send verification email to user."""
+    try:
+        msg = MIMEMultipart()
+        msg['Subject'] = 'Verify Your Email - Windsurf'
+        msg['From'] = app.config['MAIL_DEFAULT_SENDER']
+        msg['To'] = user_email
+
+        # Render the email template
+        html = render_template('email/verify_email.html', verification_url=verification_url)
+        msg.attach(MIMEText(html, 'html'))
+
+        with smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT']) as server:
+            if app.config['MAIL_USE_TLS']:
+                server.starttls()
+            if app.config['MAIL_USERNAME'] and app.config['MAIL_PASSWORD']:
+                server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
+            server.send_message(msg)
+            
+        return True
+    except Exception as e:
+        app.logger.error(f"Error sending verification email: {str(e)}")
+        return False
+
 @app.route('/')
 @login_required
 def index():
@@ -240,6 +272,13 @@ def login():
 
             user = User.query.filter_by(email=email).first()
             if user and user.check_password(password):
+                if not user.email_verified:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Please verify your email before logging in.',
+                        'needs_verification': True
+                    }), 401
+                    
                 login_user(user)
                 return jsonify({'status': 'success'})
             
@@ -248,7 +287,6 @@ def login():
             app.logger.error(f"Login error: {str(e)}")
             return jsonify({'status': 'error', 'message': 'An error occurred during login'}), 500
     
-    # GET request - render the login template
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -264,7 +302,7 @@ def register():
             
             if not email or not password:
                 return jsonify({'status': 'error', 'message': 'Email and password are required'}), 400
-                
+            
             # Check if user already exists
             if User.query.filter_by(email=email).first():
                 return jsonify({'status': 'error', 'message': 'Email already registered'}), 400
@@ -272,11 +310,26 @@ def register():
             try:
                 user = User(email=email)
                 user.set_password(password)
+                
+                # Generate verification token
+                token = user.generate_verification_token()
+                
                 db.session.add(user)
                 db.session.commit()
                 
-                login_user(user)
-                return jsonify({'status': 'success'})
+                # Send verification email
+                verification_url = url_for('verify_email', token=token, _external=True)
+                if send_verification_email(user.email, verification_url):
+                    return jsonify({
+                        'status': 'success',
+                        'message': 'Registration successful! Please check your email to verify your account.'
+                    })
+                else:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Registration successful but failed to send verification email. Please contact support.'
+                    }), 500
+                    
             except Exception as e:
                 db.session.rollback()
                 app.logger.error(f"Database error during registration: {str(e)}")
@@ -287,6 +340,67 @@ def register():
             return jsonify({'status': 'error', 'message': 'An error occurred during registration'}), 500
             
     return render_template('register.html')
+
+@app.route('/verify-email/<token>')
+def verify_email(token):
+    try:
+        email = ts.loads(token, salt='email-verification-salt', max_age=86400)  # 24 hours
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            flash('Invalid verification link.', 'error')
+            return redirect(url_for('login'))
+            
+        if user.email_verified:
+            flash('Email already verified. Please login.', 'info')
+            return redirect(url_for('login'))
+            
+        if user.verification_token != token or user.token_expiry < datetime.utcnow():
+            flash('Verification link has expired. Please request a new one.', 'error')
+            return redirect(url_for('login'))
+            
+        user.email_verified = True
+        user.verification_token = None
+        user.token_expiry = None
+        db.session.commit()
+        
+        flash('Email verified successfully! You can now login.', 'success')
+        return redirect(url_for('login'))
+        
+    except Exception as e:
+        app.logger.error(f"Email verification error: {str(e)}")
+        flash('Invalid or expired verification link.', 'error')
+        return redirect(url_for('login'))
+
+@app.route('/resend-verification', methods=['POST'])
+def resend_verification():
+    try:
+        data = request.get_json()
+        if not data or not data.get('email'):
+            return jsonify({'status': 'error', 'message': 'Email is required'}), 400
+            
+        user = User.query.filter_by(email=data['email']).first()
+        if not user:
+            # Don't reveal that the user doesn't exist
+            return jsonify({'status': 'success', 'message': 'If your email exists, you will receive a verification link shortly.'}), 200
+            
+        if user.email_verified:
+            return jsonify({'status': 'error', 'message': 'Email is already verified'}), 400
+            
+        # Generate new verification token
+        token = user.generate_verification_token()
+        db.session.commit()
+        
+        # Send verification email
+        verification_url = url_for('verify_email', token=token, _external=True)
+        if send_verification_email(user.email, verification_url):
+            return jsonify({'status': 'success', 'message': 'Verification email sent successfully'}), 200
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to send verification email'}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Resend verification error: {str(e)}")
+        return jsonify({'status': 'error', 'message': 'An error occurred'}), 500
 
 @app.route('/logout')
 @login_required
