@@ -2,94 +2,205 @@
 
 {% block extra_head %}
 <style>
-    .form-group {
-        margin-bottom: 20px;
-        background: white;
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
     }
+    
+    .header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    
+    .header h1 {
+        font-size: 2.5rem;
+        color: #2c3e50;
+        margin-bottom: 1rem;
+    }
+    
+    .header p {
+        color: #7f8c8d;
+        font-size: 1.1rem;
+    }
+    
+    .form-group {
+        margin-bottom: 1.5rem;
+        background: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
     .form-control {
         width: 100%;
-        padding: 8px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        box-sizing: border-box;
+        padding: 0.75rem;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 1rem;
+        transition: all 0.3s;
     }
+    
+    .form-control:focus {
+        border-color: #3498db;
+        box-shadow: 0 0 0 3px rgba(52,152,219,0.2);
+        outline: none;
+    }
+    
     textarea.form-control {
         min-height: 150px;
         resize: vertical;
     }
+    
     .error {
         color: #e74c3c;
         display: none;
-        margin-top: 5px;
-        font-size: 14px;
+        margin-top: 0.5rem;
+        font-size: 0.875rem;
     }
+    
     .success {
         color: #27ae60;
         display: none;
-        margin-top: 5px;
-        font-size: 14px;
+        margin-top: 0.5rem;
+        font-size: 0.875rem;
     }
+    
     .loading {
         text-align: center;
         display: none;
-        margin: 10px 0;
+        margin: 1rem 0;
+        color: #3498db;
+        font-weight: 600;
     }
+    
     .mode-selector {
         display: flex;
-        gap: 10px;
-        margin-bottom: 20px;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
     }
+    
     .mode-button {
         flex: 1;
-        padding: 15px;
+        padding: 1rem;
         border: 2px solid #3498db;
         border-radius: 8px;
         background: white;
         color: #3498db;
-        font-weight: bold;
+        font-weight: 600;
         cursor: pointer;
         transition: all 0.3s;
     }
+    
+    .mode-button:hover {
+        background: #f7f9fc;
+    }
+    
     .mode-button.active {
         background: #3498db;
         color: white;
     }
+    
     .input-section {
         display: none;
     }
+    
     .input-section.active {
         display: block;
+        animation: fadeIn 0.3s ease-in-out;
     }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
     #generatedContent {
         white-space: pre-wrap;
         background: white;
-        padding: 20px;
-        border-radius: 8px;
-        margin-top: 20px;
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin-top: 1.5rem;
+        border: 2px solid #e2e8f0;
     }
+    
+    .color-section {
+        background: #f8fafc;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-top: 1rem;
+    }
+    
     .color-input {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 1rem;
+        margin-bottom: 1rem;
     }
+    
+    .color-input label {
+        min-width: 100px;
+    }
+    
     .color-input input[type="color"] {
-        width: 50px;
+        width: 60px;
         height: 40px;
         padding: 0;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        border: 2px solid #e2e8f0;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+    
+    .btn {
+        width: 100%;
+        padding: 1rem;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .btn-primary {
+        background: #3498db;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #2980b9;
+    }
+    
+    .btn-success {
+        background: #27ae60;
+        color: white;
+    }
+    
+    .btn-success:hover {
+        background: #219a52;
+    }
+    
+    .btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+<div class="container">
+    <div class="header">
+        <h1>AI Presentation Generator</h1>
+        <p>Create beautiful presentations in seconds using artificial intelligence</p>
+    </div>
+
     <div class="mode-selector">
-        <button class="mode-button active" onclick="switchMode('prompt')" id="promptModeBtn">Generate from Prompt</button>
-        <button class="mode-button" onclick="switchMode('content')" id="contentModeBtn">Generate from Content</button>
+        <button class="mode-button active" onclick="switchMode('prompt')" id="promptModeBtn">
+            <i class="fas fa-magic"></i> Generate from Prompt
+        </button>
+        <button class="mode-button" onclick="switchMode('content')" id="contentModeBtn">
+            <i class="fas fa-file-alt"></i> Generate from Content
+        </button>
     </div>
     
     <form id="presentationForm">
@@ -97,22 +208,37 @@
         
         <div id="promptSection" class="input-section active">
             <div class="form-group">
-                <label class="block text-sm font-medium text-gray-700 mb-2" for="prompt">Enter your presentation topic or prompt:</label>
-                <input type="text" id="prompt" name="prompt" class="form-control" placeholder="e.g., 'The Future of Artificial Intelligence'" required>
+                <label class="block text-sm font-medium text-gray-700 mb-2" for="prompt">
+                    <i class="fas fa-lightbulb"></i> Enter your presentation topic:
+                </label>
+                <input type="text" 
+                       id="prompt" 
+                       name="prompt" 
+                       class="form-control" 
+                       placeholder="e.g., 'The Future of Artificial Intelligence'" 
+                       required>
                 <div id="promptError" class="error">Please enter a topic or prompt</div>
             </div>
         </div>
         
         <div id="contentSection" class="input-section">
             <div class="form-group">
-                <label class="block text-sm font-medium text-gray-700 mb-2" for="content">Paste your article or notes:</label>
-                <textarea id="content" name="content" class="form-control" placeholder="Paste your content here..." required></textarea>
+                <label class="block text-sm font-medium text-gray-700 mb-2" for="content">
+                    <i class="fas fa-file-alt"></i> Paste your content:
+                </label>
+                <textarea id="content" 
+                          name="content" 
+                          class="form-control" 
+                          placeholder="Paste your article, notes, or any text content here..." 
+                          required></textarea>
                 <div id="contentError" class="error">Please enter some content</div>
             </div>
         </div>
 
         <div class="form-group">
-            <label class="block text-sm font-medium text-gray-700 mb-2" for="template">Select Template:</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2" for="template">
+                <i class="fas fa-paint-brush"></i> Choose a Template:
+            </label>
             <select id="template" name="template" class="form-control">
                 <option value="modern">Modern (Gray Gradient)</option>
                 <option value="nature">Nature (Green Gradient)</option>
@@ -122,56 +248,46 @@
         </div>
 
         <div class="form-group">
-            <h3 class="text-lg font-medium text-gray-900 mb-4">Custom Colors (Optional)</h3>
-            <div class="space-y-4">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">
+                <i class="fas fa-palette"></i> Customize Colors (Optional)
+            </h3>
+            <div class="color-section">
                 <div class="color-input">
-                    <label class="block text-sm font-medium text-gray-700" for="titleColor">Title Color:</label>
-                    <input type="color" id="titleColor" name="titleColor" value="#000000">
+                    <label for="titleColor">Title Color:</label>
+                    <input type="color" id="titleColor" name="titleColor" value="#333333">
                 </div>
                 <div class="color-input">
-                    <label class="block text-sm font-medium text-gray-700" for="textColor">Text Color:</label>
-                    <input type="color" id="textColor" name="textColor" value="#000000">
+                    <label for="textColor">Text Color:</label>
+                    <input type="color" id="textColor" name="textColor" value="#666666">
                 </div>
-                
-                <div class="background-options mt-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Background Style:</label>
-                    <div class="space-y-2">
-                        <div>
-                            <input type="radio" id="solidBg" name="backgroundStyle" value="solid" checked>
-                            <label for="solidBg">Solid Color</label>
-                            <input type="color" id="backgroundColor" name="backgroundColor" value="#FFFFFF">
-                        </div>
-                        <div>
-                            <input type="radio" id="gradientBg" name="backgroundStyle" value="gradient">
-                            <label for="gradientBg">Gradient</label>
-                            <input type="color" id="gradientStart" name="gradientStart" value="#FFFFFF">
-                            <input type="color" id="gradientEnd" name="gradientEnd" value="#E0E0E0">
-                        </div>
-                        <div>
-                            <input type="radio" id="patternBg" name="backgroundStyle" value="pattern">
-                            <label for="patternBg">Pattern</label>
-                            <input type="color" id="patternColor1" name="patternColor1" value="#FFFFFF">
-                            <input type="color" id="patternColor2" name="patternColor2" value="#E0E0E0">
-                        </div>
-                    </div>
+                <div class="color-input">
+                    <label for="bgColor1">Background Start:</label>
+                    <input type="color" id="bgColor1" name="bgColor1" value="#ffffff">
+                </div>
+                <div class="color-input">
+                    <label for="bgColor2">Background End:</label>
+                    <input type="color" id="bgColor2" name="bgColor2" value="#f5f5f5">
                 </div>
             </div>
         </div>
 
-        <button type="button" onclick="generatePresentation()" id="generateBtn" class="w-full bg-blue-600 text-white hover:bg-blue-700 py-2 px-4 rounded-md">
-            Generate Presentation
+        <button type="button" 
+                onclick="generatePresentation()" 
+                id="generateBtn" 
+                class="btn btn-primary">
+            <i class="fas fa-magic"></i> Generate Presentation
         </button>
     </form>
     
     <div id="loading" class="loading">
-        Generating presentation...
+        <i class="fas fa-spinner fa-spin"></i> Creating your presentation...
     </div>
     
     <div id="generatedContent"></div>
     
-    <div id="downloadContainer" style="display: none; margin-top: 20px;">
-        <button onclick="downloadPresentation()" class="w-full bg-green-600 text-white hover:bg-green-700 py-2 px-4 rounded-md">
-            Download Presentation
+    <div id="downloadContainer" style="display: none; margin-top: 1.5rem;">
+        <button onclick="downloadPresentation()" class="btn btn-success">
+            <i class="fas fa-download"></i> Download Presentation
         </button>
     </div>
 </div>
