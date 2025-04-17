@@ -1,4 +1,4 @@
-flask==2.3.3
+flask==2.2.5
 flask-sqlalchemy==3.0.5
 flask-login==0.6.2
 flask-wtf==1.1.1
@@ -10,4 +10,4 @@ python-pptx==1.0.2
 pillow==11.2.1
 requests==2.31.0
 itsdangerous==2.1.2
-werkzeug==2.3.7
+werkzeug==2.2.3
