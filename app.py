@@ -18,6 +18,7 @@ import requests
 from PIL import Image
 from io import BytesIO
 import openai
+import json
 
 # Load environment variables
 load_dotenv()
@@ -267,15 +268,13 @@ def register():
             # Check if user already exists
             if User.query.filter_by(email=email).first():
                 return jsonify({'status': 'error', 'message': 'Email already registered'}), 400
-                
-            # Create new user
+            
             try:
                 user = User(email=email)
                 user.set_password(password)
                 db.session.add(user)
                 db.session.commit()
                 
-                # Log the user in
                 login_user(user)
                 return jsonify({'status': 'success'})
             except Exception as e:
@@ -313,60 +312,35 @@ def generate():
         if not mode or not input_text:
             return jsonify({
                 'status': 'error',
-                'message': 'Missing required fields'
+                'message': 'Mode and input text are required'
             }), 400
-
-        # Get custom styles
-        custom_styles = {
-            'title': request.form.get('titleColor', '#000000'),
-            'text': request.form.get('textColor', '#000000'),
-            'background': {}
-        }
-
-        background_style = request.form.get('backgroundStyle', 'solid')
-        if background_style == 'solid':
-            custom_styles['background'] = {
-                'type': 'solid',
-                'color': request.form.get('backgroundColor', '#FFFFFF')
-            }
-        elif background_style == 'gradient':
-            custom_styles['background'] = {
-                'type': 'gradient',
-                'color1': request.form.get('gradientStart', '#FFFFFF'),
-                'color2': request.form.get('gradientEnd', '#E0E0E0')
-            }
-        elif background_style == 'pattern':
-            custom_styles['background'] = {
-                'type': 'pattern',
-                'color1': request.form.get('patternColor1', '#FFFFFF'),
-                'color2': request.form.get('patternColor2', '#E0E0E0')
-            }
-
+            
         # Generate presentation content
-        content = generate_presentation_content(mode, input_text)
+        content = generate_presentation_content(input_text, mode)
         if not content:
             return jsonify({
                 'status': 'error',
                 'message': 'Failed to generate presentation content'
             }), 500
-
+            
         try:
-            # Create temporary file for the presentation
-            temp_ppt = tempfile.NamedTemporaryFile(delete=False, suffix='.pptx')
+            # Parse content as JSON
+            slides = json.loads(content)
             
-            # Create the presentation with custom styles
-            create_ppt(content, temp_ppt.name, template, custom_styles)
+            # Create PowerPoint
+            temp_ppt = create_ppt(slides, template)
+            if not temp_ppt:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Failed to create PowerPoint file'
+                }), 500
             
-            # Add watermark if user is on free plan
-            if current_user.subscription_type == 'free':
-                add_watermark(temp_ppt.name)
-            
-            # Save presentation record
+            # Save presentation to database
             presentation = Presentation(
-                title=f"Presentation {datetime.utcnow()}",
+                title=slides[0]['title'] if slides else "Untitled Presentation",
                 content=content,
                 file_path=temp_ppt.name,
-                user_id=current_user.id
+                user=current_user
             )
             db.session.add(presentation)
             db.session.commit()
@@ -416,41 +390,29 @@ def subscribe():
                 'message': 'Successfully subscribed to Free plan'
             })
             
-        # Get amount based on plan
-        amounts = {
-            'pro': 2000,  # $20 in cents
-            'business': 5000  # $50 in cents
-        }
+        # For paid plans, initialize payment with Paystack
+        amount = {
+            'pro': 1000,  # ₦1,000 per month
+            'business': 5000  # ₦5,000 per month
+        }.get(plan)
         
-        amount = amounts.get(plan)
-        if not amount:
-            return jsonify({
-                'status': 'error',
-                'message': 'Invalid plan selected'
-            }), 400
-            
-        # Initialize transaction with Paystack
         url = "https://api.paystack.co/transaction/initialize"
         headers = {
-            "Authorization": f"Bearer {os.getenv('PAYSTACK_SECRET_KEY')}",
+            "Authorization": f"Bearer {app.config['PAYSTACK_SECRET_KEY']}",
             "Content-Type": "application/json"
         }
-        
-        callback_url = url_for('payment_callback', _external=True)
-        
-        payload = {
+        data = {
             "email": current_user.email,
-            "amount": amount,
-            "callback_url": callback_url,
+            "amount": amount * 100,  # Amount in kobo
+            "callback_url": url_for('payment_callback', _external=True),
             "metadata": {
-                "user_id": current_user.id,
-                "plan": plan
+                "plan": plan,
+                "user_id": current_user.id
             }
         }
         
-        response = requests.post(url, json=payload, headers=headers)
-        
-        if response.status_code == 200:
+        response = requests.post(url, headers=headers, json=data)
+        if response.ok:
             data = response.json()
             if data.get('status'):
                 return jsonify({
@@ -506,9 +468,9 @@ def payment_callback():
 def download_presentation(filename):
     try:
         # Get the presentation from the database
-        presentation = Presentation.query.filter_by(
-            user_id=current_user.id,
-            file_path__contains=filename
+        presentation = Presentation.query.filter(
+            Presentation.user_id == current_user.id,
+            Presentation.file_path.like(f"%{filename}")
         ).first()
         
         if not presentation:
