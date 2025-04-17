@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_file, redirect,
 import os
 from dotenv import load_dotenv
 import logging
-from utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
+from utils.utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
 from flask_wtf.csrf import CSRFProtect
 from itsdangerous import URLSafeTimedSerializer
 import smtplib

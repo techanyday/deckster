@@ -1,37 +1,31 @@
 import os
 import io
 from datetime import datetime
-from models import SubscriptionPlan, Presentation
-from openai import OpenAI
 from pptx import Presentation as PPTXPresentation
 from pptx.util import Inches, Pt
 from PIL import Image, ImageDraw, ImageFont
 import requests
+from openai import OpenAI
 
 def check_user_limits(user):
-    # Get user's subscription plan
-    plan = SubscriptionPlan.query.get(user.subscription_plan_id)
-    if not plan:
-        return False, "No subscription plan found"
-    
-    # Get count of presentations created this month
-    start_of_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    presentations_this_month = Presentation.query.filter(
-        Presentation.user_id == user.id,
-        Presentation.created_at >= start_of_month
-    ).count()
-    
-    # Check if user has exceeded their monthly limit
-    if presentations_this_month >= plan.monthly_presentations:
-        return False, f"Monthly limit of {plan.monthly_presentations} presentations reached"
-    
-    return True, None
+    """Check if user has reached their presentation limits."""
+    if user.subscription_type == 'free':
+        # Free users can create up to 3 presentations per day
+        today_presentations = len([p for p in user.presentations if p.created_at.date() == datetime.utcnow().date()])
+        return today_presentations < 3
+    return True
 
 def get_max_slides(user):
-    plan = SubscriptionPlan.query.get(user.subscription_plan_id)
-    return plan.slides_per_presentation if plan else 5
+    """Get maximum number of slides based on user's subscription."""
+    limits = {
+        'free': 5,
+        'pro': 15,
+        'business': 30
+    }
+    return limits.get(user.subscription_type, 5)
 
 def add_watermark(image_path, watermark_text):
+    """Add watermark to an image."""
     # Open the image
     with Image.open(image_path) as img:
         # Create a copy to draw on
@@ -64,6 +58,7 @@ def add_watermark(image_path, watermark_text):
         return img_byte_arr
 
 def generate_presentation_content(topic, num_slides):
+    """Generate presentation content using OpenAI."""
     client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     
     prompt = f"""Create a presentation outline for {topic} with {num_slides} slides.
@@ -88,6 +83,7 @@ def generate_presentation_content(topic, num_slides):
         return None
 
 def create_ppt(content, watermark=None):
+    """Create a PowerPoint presentation from content."""
     prs = PPTXPresentation()
     
     # Set slide dimensions to 16:9
