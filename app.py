@@ -20,6 +20,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from utils.utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
 from pptx import Presentation
 import time
+from flask import send_from_directory
 
 # Load environment variables
 load_dotenv()
@@ -36,6 +37,16 @@ google_bp = make_google_blueprint(
     scope=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
     redirect_to='index'  # Redirect to index page after login
 )
+
+# Configure static folder for Render deployment
+if os.environ.get('RENDER'):
+    # On Render, use a tmp directory that we have write access to
+    STATIC_FOLDER = '/tmp/static'
+    PRESENTATION_FOLDER = os.path.join(STATIC_FOLDER, 'presentations')
+else:
+    # Local development
+    STATIC_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+    PRESENTATION_FOLDER = os.path.join(STATIC_FOLDER, 'presentations')
 
 # Models
 class User(UserMixin, db.Model):
@@ -127,10 +138,10 @@ class Presentation(db.Model):
     error_message = db.Column(db.Text)
 
 def create_app():
-    app = Flask(__name__, static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static'))
+    app = Flask(__name__, static_folder=STATIC_FOLDER)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
-    app.config['STATIC_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-    app.config['PRESENTATION_FOLDER'] = os.path.join(app.config['STATIC_FOLDER'], 'presentations')
+    app.config['STATIC_FOLDER'] = STATIC_FOLDER
+    app.config['PRESENTATION_FOLDER'] = PRESENTATION_FOLDER
     
     # Configure logging
     logging.basicConfig(level=logging.DEBUG)
@@ -164,12 +175,14 @@ def create_app():
         except Exception as e:
             app.logger.error(f"Error creating database tables: {str(e)}")
     
+    # Ensure static folders exist
+    os.makedirs(PRESENTATION_FOLDER, exist_ok=True)
+    app.logger.info(f'Static folder configured at: {STATIC_FOLDER}')
+    app.logger.info(f'Presentations folder configured at: {PRESENTATION_FOLDER}')
+    
     return app
 
 app = create_app()
-
-# Ensure static folders exist
-os.makedirs(app.config['PRESENTATION_FOLDER'], exist_ok=True)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -268,6 +281,15 @@ def resend_verification():
         'message': 'Email verification is not available. Please use Google to sign in.'
     }), 400
 
+@app.route('/static/presentations/<path:filename>')
+def serve_presentation(filename):
+    app.logger.info(f'Serving presentation file: {filename}')
+    try:
+        return send_from_directory(app.config['PRESENTATION_FOLDER'], filename, as_attachment=True)
+    except Exception as e:
+        app.logger.error(f'Error serving file {filename}: {str(e)}')
+        return jsonify({'error': 'File not found'}), 404
+
 @app.route('/generate', methods=['POST'])
 @login_required
 def generate_presentation():
@@ -351,12 +373,23 @@ def generate_presentation():
         try:
             full_path = os.path.join(app.config['PRESENTATION_FOLDER'], filename)
             app.logger.info(f'Attempting to save presentation to {full_path}')
+            
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            
+            # Save the file
             prs.save(full_path)
             app.logger.info(f'Successfully saved presentation to {full_path}')
             
             # Generate the URL for the file
             file_url = url_for('static', filename=f'presentations/{filename}')
             app.logger.info(f'Generated download URL: {file_url}')
+            
+            # Log file permissions and existence
+            app.logger.info(f'File exists: {os.path.exists(full_path)}')
+            if os.path.exists(full_path):
+                app.logger.info(f'File permissions: {oct(os.stat(full_path).st_mode)}')
+                app.logger.info(f'File size: {os.path.getsize(full_path)} bytes')
             
             return jsonify({
                 'success': True,
@@ -372,7 +405,7 @@ def generate_presentation():
             
         except Exception as e:
             app.logger.error(f'Error saving presentation: {str(e)}', exc_info=True)
-            return jsonify({'success': False, 'error': 'Failed to save presentation: ' + str(e)}), 500
+            return jsonify({'success': False, 'error': f'Failed to save presentation: {str(e)}'}), 500
 
     except Exception as e:
         app.logger.error(f'Error generating presentation: {str(e)}', exc_info=True)
