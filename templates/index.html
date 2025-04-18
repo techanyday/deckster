@@ -6,8 +6,8 @@
     
     {% if current_user.is_authenticated %}
         <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
-            <form id="presentationForm" method="POST" class="space-y-6">
-                {{ csrf_token() }}
+            <form id="presentationForm" class="space-y-6">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div>
                     <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
                     <input type="text" id="topic" name="topic" required
