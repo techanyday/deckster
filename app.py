@@ -264,14 +264,24 @@ def resend_verification():
 @app.route('/generate', methods=['POST'])
 @login_required
 def generate_presentation():
+    app.logger.info('Generate presentation request received')
     try:
+        # Validate CSRF token
+        csrf.protect()
+        app.logger.debug('CSRF validation passed')
+
         data = request.get_json()
+        app.logger.debug(f'Received data: {data}')
+
         topic = data.get('topic')
         num_slides = data.get('num_slides', 5)
         theme = data.get('theme', 'professional')
 
         if not topic:
+            app.logger.warning('Missing topic in request')
             return jsonify({'success': False, 'error': 'Topic is required'}), 400
+
+        app.logger.info(f'Generating presentation: topic={topic}, slides={num_slides}, theme={theme}')
 
         # TODO: Add your presentation generation logic here
         # For now, let's return a mock response
@@ -279,7 +289,6 @@ def generate_presentation():
             'title': topic,
             'slides': num_slides,
             'theme': theme,
-            # Add mock content
             'content': [
                 {'title': 'Introduction', 'content': 'Overview of ' + topic},
                 {'title': 'Key Points', 'content': 'Main aspects of ' + topic},
@@ -289,16 +298,15 @@ def generate_presentation():
             ]
         }
 
-        # TODO: Generate the actual PowerPoint file
-        # For now, we'll just return success
+        app.logger.info('Presentation generated successfully')
         return jsonify({
             'success': True,
             'message': 'Presentation generated successfully',
-            'download_url': '/download/presentation.pptx'  # This will be implemented later
+            'download_url': '/download/presentation.pptx'
         })
 
     except Exception as e:
-        app.logger.error(f"Error generating presentation: {str(e)}")
+        app.logger.error(f'Error generating presentation: {str(e)}', exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/pricing')

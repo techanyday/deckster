@@ -6,7 +6,8 @@
     
     {% if current_user.is_authenticated %}
         <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
-            <form id="presentationForm" class="space-y-6">
+            <form id="presentationForm" method="POST" class="space-y-6">
+                {{ csrf_token() }}
                 <div>
                     <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
                     <input type="text" id="topic" name="topic" required
@@ -49,9 +50,9 @@
                     <span class="ml-2">Generating your presentation...</span>
                 </div>
             </div>
-            
-            <div id="errorMessage" class="hidden mt-4 p-4 bg-red-100 text-red-700 rounded-md"></div>
-            
+
+            <div id="errorMessage" class="mt-4 p-4 bg-red-100 text-red-700 rounded-md hidden"></div>
+
             <div id="downloadSection" class="mt-8 text-center hidden">
                 <a href="#" id="downloadLink" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
                     <svg class="-ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -86,6 +87,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (form) {
         form.addEventListener('submit', async function(e) {
             e.preventDefault();
+            console.log('Form submitted');
             
             loadingIndicator.classList.remove('hidden');
             errorMessage.classList.add('hidden');
@@ -99,17 +101,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     num_slides: parseInt(document.getElementById('slides').value),
                     theme: document.getElementById('theme').value
                 };
+                
+                console.log('Sending data:', formData);
 
                 const response = await fetch('/generate', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
                     },
                     body: JSON.stringify(formData)
                 });
                 
+                console.log('Response status:', response.status);
                 const data = await response.json();
+                console.log('Response data:', data);
                 
                 if (data.success) {
                     downloadSection.classList.remove('hidden');
