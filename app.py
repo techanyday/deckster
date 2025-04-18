@@ -356,52 +356,48 @@ def create_blank_presentation():
         app.logger.debug(f"Presentation object type: {type(prs).__name__}")
         app.logger.debug(f"Presentation module: {prs.__class__.__module__}")
         
-        # Create a slide master if none exists
-        if not hasattr(prs, 'slide_masters') or len(prs.slide_masters) == 0:
-            app.logger.info("Creating new slide master")
-            slide_master = prs.slide_master
-            
-            # Create slide layouts if none exist
-            if not hasattr(prs, 'slide_layouts') or len(prs.slide_layouts) == 0:
-                app.logger.info("Creating basic slide layouts")
-                # Add title layout
-                title_layout = slide_master.add_slide_layout()
-                title_layout.name = 'Title Slide'
-                
-                # Add title placeholder
-                title_placeholder = title_layout.shapes.add_placeholder(
-                    msoplacement=1,  # Title
-                    left=Inches(1),
-                    top=Inches(1),
-                    width=Inches(8),
-                    height=Inches(1.5)
-                )
-                
-                # Add subtitle placeholder
-                subtitle_placeholder = title_layout.shapes.add_placeholder(
-                    msoplacement=2,  # Subtitle
-                    left=Inches(1),
-                    top=Inches(3),
-                    width=Inches(8),
-                    height=Inches(1)
-                )
+        # Skip slide master creation - use direct shape creation instead
+        app.logger.info("Creating slide with direct shapes")
         
-        # Verify we have slides collection
-        if not hasattr(prs, 'slides'):
-            app.logger.error("Presentation missing slides collection")
-            raise ValueError("Invalid presentation: missing slides collection")
+        # Create blank slide
+        blank_layout = prs.slide_layouts[6]  # Use blank layout
+        slide = prs.slides.add_slide(blank_layout)
         
-        # Log presentation structure
-        app.logger.debug(f"Slide masters: {len(prs.slide_masters)}")
-        app.logger.debug(f"Slide layouts: {len(prs.slide_layouts)}")
-        app.logger.debug(f"Initial slides: {len(prs.slides)}")
+        # Create title shape
+        title_box = slide.shapes.add_textbox(
+            left=Inches(1),
+            top=Inches(1),
+            width=Inches(8),
+            height=Inches(1.5)
+        )
+        title_frame = title_box.text_frame
+        title_frame.clear()  # Clear any existing text
+        p = title_frame.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        run = p.add_run()
+        run.text = "Title"  # Will be replaced later
+        font = run.font
+        font.size = Pt(44)
+        font.bold = True
         
-        # Create initial slide
-        title_layout = prs.slide_layouts[0]
-        slide = prs.slides.add_slide(title_layout)
+        # Create subtitle shape
+        subtitle_box = slide.shapes.add_textbox(
+            left=Inches(1),
+            top=Inches(3),
+            width=Inches(8),
+            height=Inches(1)
+        )
+        subtitle_frame = subtitle_box.text_frame
+        subtitle_frame.clear()
+        p = subtitle_frame.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        run = p.add_run()
+        run.text = "Subtitle"  # Will be replaced later
+        font = run.font
+        font.size = Pt(24)
         
-        # Verify slide creation
-        app.logger.debug(f"Slides after creation: {len(prs.slides)}")
+        # Log slide creation
+        app.logger.debug(f"Slides count: {len(prs.slides)}")
         app.logger.debug(f"Shapes in slide: {len(slide.shapes)}")
         
         return prs
@@ -463,29 +459,30 @@ def generate_presentation():
             # Create blank presentation first
             prs = create_blank_presentation()
             
-            # Add content to first slide
+            # Update first slide content
             slide = prs.slides[0]
             
-            # Create text boxes for title and subtitle
-            title_box = slide.shapes.add_textbox(
-                left=Inches(1),
-                top=Inches(1),
-                width=Inches(8),
-                height=Inches(1.5)
-            )
-            title_box.text_frame.text = topic
-            title_box.text_frame.paragraphs[0].font.size = Pt(44)
-            title_box.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
-            
-            subtitle_box = slide.shapes.add_textbox(
-                left=Inches(1),
-                top=Inches(3),
-                width=Inches(8),
-                height=Inches(1)
-            )
-            subtitle_box.text_frame.text = f"Generated for {current_user.name}"
-            subtitle_box.text_frame.paragraphs[0].font.size = Pt(24)
-            subtitle_box.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+            # Update title and subtitle
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    text_frame = shape.text_frame
+                    if text_frame.text == "Title":
+                        text_frame.clear()
+                        p = text_frame.paragraphs[0]
+                        p.alignment = PP_ALIGN.CENTER
+                        run = p.add_run()
+                        run.text = topic
+                        font = run.font
+                        font.size = Pt(44)
+                        font.bold = True
+                    elif text_frame.text == "Subtitle":
+                        text_frame.clear()
+                        p = text_frame.paragraphs[0]
+                        p.alignment = PP_ALIGN.CENTER
+                        run = p.add_run()
+                        run.text = f"Generated for {current_user.name}"
+                        font = run.font
+                        font.size = Pt(24)
             
             # Save the presentation
             prs.save(filepath)
