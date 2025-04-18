@@ -4,7 +4,7 @@ import json
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
-from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError
+from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError, ValidationError
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_cors import CORS
@@ -196,19 +196,34 @@ def csrf_protect_json():
     def decorator(view_function):
         @wraps(view_function)
         def wrapped_view(*args, **kwargs):
-            # Check for CSRF token in X-CSRF-Token header
-            token = request.headers.get('X-CSRF-Token')
+            # Check for CSRF token in various places
+            token = request.headers.get('X-CSRF-Token') or request.headers.get('X-CSRFToken')
+            
+            if not token and request.is_json:
+                # Try to get token from JSON body
+                data = request.get_json()
+                if data and 'csrf_token' in data:
+                    token = data['csrf_token']
+            
+            if not token and request.form:
+                # Try to get token from form data
+                token = request.form.get('csrf_token')
+            
+            app.logger.debug(f"Found CSRF token: {bool(token)}")
+            app.logger.debug(f"Request headers: {dict(request.headers)}")
+            
             if not token:
-                app.logger.error("Missing CSRF token in request headers")
+                app.logger.error("No CSRF token found in request")
                 return jsonify(error="Missing CSRF token"), 400
             
-            # Validate token using Flask-WTF's validate_csrf
             try:
-                csrf.protect()
-            except CSRFError as e:
+                app.logger.debug("Validating CSRF token")
+                csrf.validate_csrf(token)
+                app.logger.debug("CSRF token validation successful")
+            except ValidationError as e:
                 app.logger.error(f"CSRF validation failed: {str(e)}")
                 return jsonify(error="Invalid CSRF token"), 400
-                
+            
             return view_function(*args, **kwargs)
         return wrapped_view
     return decorator

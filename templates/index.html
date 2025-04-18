@@ -6,10 +6,9 @@
     
     {% if current_user.is_authenticated %}
         <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
-            <!-- Add method and action as fallback -->
             <form id="presentationForm" class="space-y-6" method="POST" action="/generate">
-                <!-- Store CSRF token in a meta tag -->
-                <meta name="csrf-token" content="{{ csrf_token() }}">
+                <!-- Add CSRF token as hidden input -->
+                <input type="hidden" name="csrf_token" id="csrf_token" value="{{ csrf_token() }}">
 
                 <div>
                     <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
@@ -73,6 +72,18 @@
 // Log when the script loads
 console.log('Presentation form script loading...');
 
+// Function to get CSRF token
+function getCSRFToken() {
+    const tokenInput = document.getElementById('csrf_token');
+    if (!tokenInput) {
+        console.error('CSRF token input not found!');
+        return null;
+    }
+    const token = tokenInput.value;
+    console.log('Found CSRF token:', token ? 'Token exists' : 'Token missing');
+    return token;
+}
+
 // Function to handle form submission
 function handleFormSubmit(event) {
     console.log('Form submit handler triggered');
@@ -90,22 +101,24 @@ function handleFormSubmit(event) {
     submitButton.disabled = true;
     
     try {
-        // Get CSRF token from meta tag
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-        console.log('CSRF Token found:', !!csrfToken);
-        
+        // Get CSRF token from hidden input
+        const csrfToken = getCSRFToken();
         if (!csrfToken) {
-            throw new Error('CSRF token not found');
+            throw new Error('CSRF token not found in form');
         }
+        
+        console.log('Using CSRF token from hidden input field');
         
         // Get form data
         const formData = {
             topic: event.target.querySelector('#topic').value,
             num_slides: parseInt(event.target.querySelector('#slides').value),
-            theme: event.target.querySelector('#theme').value
+            theme: event.target.querySelector('#theme').value,
+            csrf_token: csrfToken  // Include token in request body
         };
         
         console.log('Form data prepared:', formData);
+        console.log('CSRF Token being sent:', csrfToken);
         
         // Send POST request
         console.log('Sending fetch request to /generate...');
@@ -113,19 +126,20 @@ function handleFormSubmit(event) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken
+                'X-CSRFToken': csrfToken,  // Send in header
+                'X-CSRF-Token': csrfToken  // Send in alternate header
             },
             body: JSON.stringify(formData),
             credentials: 'same-origin'
         })
         .then(response => {
             console.log('Received response:', response.status);
-            if (!response.ok) {
-                return response.json().then(data => {
+            return response.json().then(data => {
+                if (!response.ok) {
                     throw new Error(data.error || 'Server error');
-                });
-            }
-            return response.json();
+                }
+                return data;
+            });
         })
         .then(data => {
             console.log('Response data:', data);
@@ -164,14 +178,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     
-    console.log('Form found, attaching submit handler');
+    console.log('Form found, checking CSRF token');
+    const token = getCSRFToken();
+    if (!token) {
+        console.error('No CSRF token found in form!');
+    } else {
+        console.log('CSRF token verified in form');
+    }
     
-    // Remove any existing listeners
-    form.removeEventListener('submit', handleFormSubmit);
-    
-    // Add submit event listener
+    console.log('Attaching submit handler');
     form.addEventListener('submit', handleFormSubmit);
-    
     console.log('Form handler attached successfully');
 });
 
