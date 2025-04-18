@@ -7,7 +7,8 @@
     {% if current_user.is_authenticated %}
         <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
             <form id="presentationForm" class="space-y-6">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <!-- Store CSRF token in a meta tag -->
+                <meta name="csrf-token" content="{{ csrf_token() }}">
 
                 <div>
                     <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
@@ -84,12 +85,14 @@ document.addEventListener('DOMContentLoaded', function() {
         errorMessage.classList.add('hidden');
         
         try {
+            // Get CSRF token from meta tag
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+            
             // Get form data
             const formData = {
                 topic: form.querySelector('#topic').value,
                 num_slides: parseInt(form.querySelector('#slides').value),
-                theme: form.querySelector('#theme').value,
-                csrf_token: form.querySelector('input[name="csrf_token"]').value
+                theme: form.querySelector('#theme').value
             };
             
             console.log('Submitting form data:', formData);
@@ -99,12 +102,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': formData.csrf_token
+                    'X-CSRF-Token': csrfToken  // Changed from X-CSRFToken to X-CSRF-Token
                 },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(formData),
+                credentials: 'same-origin'  // Important for CSRF
             });
             
             console.log('Response status:', response.status);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Server error');
+            }
             
             // Parse response
             const data = await response.json();

@@ -21,6 +21,8 @@ from utils.utils import check_user_limits, get_max_slides, add_watermark, genera
 from pptx import Presentation
 import time
 from flask import send_from_directory
+from functools import wraps
+from flask_wtf.csrf import CSRFError, ValidationError
 
 # Load environment variables
 load_dotenv()
@@ -184,6 +186,38 @@ def create_app():
 
 app = create_app()
 
+# Custom CSRF error handler
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    return jsonify(error="CSRF token validation failed"), 400
+
+# Custom decorator for JSON CSRF validation
+def csrf_protect_json():
+    def decorator(view_function):
+        @wraps(view_function)
+        def wrapped_view(*args, **kwargs):
+            # Check for CSRF token in X-CSRF-Token header
+            token = request.headers.get('X-CSRF-Token')
+            if not token:
+                return jsonify(error="Missing CSRF token"), 400
+            
+            # Validate token
+            try:
+                csrf.validate_csrf(token)
+            except ValidationError:
+                return jsonify(error="Invalid CSRF token"), 400
+                
+            return view_function(*args, **kwargs)
+        return wrapped_view
+    return decorator
+
+# Add CSRF token to all responses
+@app.after_request
+def add_csrf_token(response):
+    if 'text/html' in response.headers.get('Content-Type', ''):
+        response.set_cookie('csrf_token', csrf.generate_csrf())
+    return response
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -292,41 +326,24 @@ def serve_presentation(filename):
 
 @app.route('/generate', methods=['POST'])
 @login_required
+@csrf_protect_json()
 def generate_presentation():
-    app.logger.info('Generate presentation request received')
+    app.logger.info(f"Generate presentation request received from user: {current_user.email}")
+    
     try:
-        # Get JSON data
         data = request.get_json()
-        app.logger.debug(f'Received data: {data}')
-
         if not data:
-            app.logger.error('No JSON data received')
-            return jsonify({'success': False, 'error': 'No data received'}), 400
-
-        # Validate CSRF token
-        token = data.get('csrf_token')
-        if not token:
-            app.logger.error('No CSRF token in request')
-            return jsonify({'success': False, 'error': 'CSRF token missing'}), 400
-
-        try:
-            csrf.validate_csrf(token)
-            app.logger.debug('CSRF validation passed')
-        except Exception as e:
-            app.logger.error(f'CSRF validation failed: {str(e)}')
-            return jsonify({'success': False, 'error': 'Invalid CSRF token'}), 400
-
-        # Get form data
+            return jsonify(error="No JSON data received"), 400
+            
         topic = data.get('topic')
-        num_slides = int(data.get('num_slides', 5))
-        theme = data.get('theme', 'professional')
-
-        if not topic:
-            app.logger.warning('Missing topic in request')
-            return jsonify({'success': False, 'error': 'Topic is required'}), 400
-
-        app.logger.info(f'Generating presentation: topic={topic}, slides={num_slides}, theme={theme}')
-
+        num_slides = data.get('num_slides')
+        theme = data.get('theme')
+        
+        if not all([topic, num_slides, theme]):
+            return jsonify(error="Missing required fields"), 400
+            
+        app.logger.info(f"Generating presentation: {topic}, {num_slides} slides, {theme} theme")
+        
         # Create a new PowerPoint presentation
         prs = Presentation()
 
