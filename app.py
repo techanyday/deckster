@@ -27,6 +27,14 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
+# Initialize Google Blueprint globally
+google_bp = make_google_blueprint(
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+    scope=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+    redirect_url='/google/authorized'
+)
+
 # Models
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -128,17 +136,7 @@ def create_app():
     login_manager.init_app(app)
     csrf.init_app(app)
     
-    # Configure Google OAuth
-    app.config['GOOGLE_OAUTH_CLIENT_ID'] = os.getenv('GOOGLE_CLIENT_ID')
-    app.config['GOOGLE_OAUTH_CLIENT_SECRET'] = os.getenv('GOOGLE_CLIENT_SECRET')
-    
-    google_bp = make_google_blueprint(
-        client_id=app.config['GOOGLE_OAUTH_CLIENT_ID'],
-        client_secret=app.config['GOOGLE_OAUTH_CLIENT_SECRET'],
-        scope=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-        redirect_url='/google/authorized'
-    )
-    
+    # Register Google Blueprint
     app.register_blueprint(google_bp, url_prefix='/login')
     
     # Configure OAuth storage
