@@ -356,50 +356,80 @@ def create_blank_presentation():
         app.logger.debug(f"Presentation object type: {type(prs).__name__}")
         app.logger.debug(f"Presentation module: {prs.__class__.__module__}")
         
-        # Skip slide master creation - use direct shape creation instead
-        app.logger.info("Creating slide with direct shapes")
+        # Access the first slide master
+        app.logger.info("Accessing slide master")
+        if not hasattr(prs, 'slide_masters') or len(prs.slide_masters) == 0:
+            app.logger.error("No slide masters found")
+            raise ValueError("Invalid presentation: no slide masters found")
+            
+        slide_master = prs.slide_masters[0]
+        app.logger.debug(f"Slide master found: {len(slide_master.shapes)} shapes")
         
-        # Create blank slide
-        blank_layout = prs.slide_layouts[6]  # Use blank layout
-        slide = prs.slides.add_slide(blank_layout)
+        # Use the first layout (usually title slide)
+        if len(slide_master.slide_layouts) == 0:
+            app.logger.error("No slide layouts found")
+            raise ValueError("Invalid presentation: no slide layouts found")
+            
+        title_layout = slide_master.slide_layouts[0]
+        app.logger.debug(f"Using layout: {title_layout.name}")
         
-        # Create title shape
-        title_box = slide.shapes.add_textbox(
-            left=Inches(1),
-            top=Inches(1),
-            width=Inches(8),
-            height=Inches(1.5)
-        )
-        title_frame = title_box.text_frame
-        title_frame.clear()  # Clear any existing text
-        p = title_frame.paragraphs[0]
-        p.alignment = PP_ALIGN.CENTER
-        run = p.add_run()
-        run.text = "Title"  # Will be replaced later
-        font = run.font
-        font.size = Pt(44)
-        font.bold = True
+        # Create title slide
+        slide = prs.slides.add_slide(title_layout)
+        app.logger.debug(f"Slide created, shapes: {len(slide.shapes)}")
         
-        # Create subtitle shape
-        subtitle_box = slide.shapes.add_textbox(
-            left=Inches(1),
-            top=Inches(3),
-            width=Inches(8),
-            height=Inches(1)
-        )
-        subtitle_frame = subtitle_box.text_frame
-        subtitle_frame.clear()
-        p = subtitle_frame.paragraphs[0]
-        p.alignment = PP_ALIGN.CENTER
-        run = p.add_run()
-        run.text = "Subtitle"  # Will be replaced later
-        font = run.font
-        font.size = Pt(24)
+        # Find title and subtitle placeholders
+        title = None
+        subtitle = None
         
-        # Log slide creation
-        app.logger.debug(f"Slides count: {len(prs.slides)}")
-        app.logger.debug(f"Shapes in slide: {len(slide.shapes)}")
+        for shape in slide.placeholders:
+            if shape.placeholder_format.type == 1:  # Title
+                title = shape
+            elif shape.placeholder_format.type == 2:  # Subtitle
+                subtitle = shape
         
+        # If no placeholders found, create text boxes
+        if not title:
+            app.logger.warning("No title placeholder, creating text box")
+            title_box = slide.shapes.add_textbox(
+                left=Inches(1),
+                top=Inches(1),
+                width=Inches(8),
+                height=Inches(1.5)
+            )
+            title = title_box
+            
+        if not subtitle:
+            app.logger.warning("No subtitle placeholder, creating text box")
+            subtitle_box = slide.shapes.add_textbox(
+                left=Inches(1),
+                top=Inches(3),
+                width=Inches(8),
+                height=Inches(1)
+            )
+            subtitle = subtitle_box
+        
+        # Add placeholder text
+        if hasattr(title, 'text_frame'):
+            title.text_frame.clear()
+            p = title.text_frame.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            run = p.add_run()
+            run.text = "Title"
+            font = run.font
+            font.size = Pt(44)
+            font.bold = True
+            
+        if hasattr(subtitle, 'text_frame'):
+            subtitle.text_frame.clear()
+            p = subtitle.text_frame.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            run = p.add_run()
+            run.text = "Subtitle"
+            font = run.font
+            font.size = Pt(24)
+        
+        # Log final state
+        app.logger.debug(f"Slides: {len(prs.slides)}, Shapes in slide: {len(slide.shapes)}")
         return prs
         
     except Exception as e:
