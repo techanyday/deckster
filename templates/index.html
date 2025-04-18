@@ -6,7 +6,7 @@
     
     {% if current_user.is_authenticated %}
         <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
-            <form id="presentationForm" class="space-y-6" onsubmit="return false;">
+            <form id="presentationForm" class="space-y-6">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <div>
@@ -34,8 +34,7 @@
                 </div>
 
                 <div class="flex justify-center">
-                    <button type="button" id="generateBtn" onclick="handleSubmit(event)"
-                        class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <button type="submit" id="generateBtn" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" id="loadingSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -69,58 +68,63 @@
 
 {% block extra_scripts %}
 <script>
-async function handleSubmit(e) {
-    e.preventDefault();
-    
-    const errorMessage = document.getElementById('errorMessage');
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('presentationForm');
+    const loadingSpinner = document.getElementById('loadingSpinner');
     const downloadSection = document.getElementById('downloadSection');
     const downloadLink = document.getElementById('downloadLink');
-    const generateBtn = document.getElementById('generateBtn');
-    const loadingSpinner = document.getElementById('loadingSpinner');
+    const errorMessage = document.getElementById('errorMessage');
     
-    errorMessage.classList.add('hidden');
-    downloadSection.classList.add('hidden');
-    generateBtn.disabled = true;
-    loadingSpinner.classList.remove('hidden');
-    
-    try {
-        const formData = {
-            topic: document.getElementById('topic').value,
-            num_slides: parseInt(document.getElementById('slides').value),
-            theme: document.getElementById('theme').value,
-            csrf_token: document.querySelector('input[name="csrf_token"]').value
-        };
-
-        const response = await fetch('/generate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': formData.csrf_token
-            },
-            body: JSON.stringify(formData)
-        });
-
-        const data = await response.json();
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
         
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to generate presentation');
+        // Show loading spinner
+        loadingSpinner.classList.remove('hidden');
+        downloadSection.classList.add('hidden');
+        errorMessage.classList.add('hidden');
+        
+        try {
+            // Get form data
+            const formData = {
+                topic: form.querySelector('#topic').value,
+                num_slides: parseInt(form.querySelector('#slides').value),
+                theme: form.querySelector('#theme').value,
+                csrf_token: form.querySelector('input[name="csrf_token"]').value
+            };
+            
+            console.log('Submitting form data:', formData);
+            
+            // Send POST request
+            const response = await fetch('/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': formData.csrf_token
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            console.log('Response status:', response.status);
+            
+            // Parse response
+            const data = await response.json();
+            console.log('Response data:', data);
+            
+            if (data.success) {
+                // Show download section
+                downloadSection.classList.remove('hidden');
+                downloadLink.href = data.download_url;
+            } else {
+                throw new Error(data.error || 'Failed to generate presentation');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            errorMessage.textContent = error.message;
+            errorMessage.classList.remove('hidden');
+        } finally {
+            loadingSpinner.classList.add('hidden');
         }
-
-        if (data.success) {
-            downloadSection.classList.remove('hidden');
-            downloadLink.href = data.download_url;
-        } else {
-            throw new Error(data.error || 'Failed to generate presentation');
-        }
-
-    } catch (error) {
-        console.error('Error:', error);
-        errorMessage.textContent = error.message;
-        errorMessage.classList.remove('hidden');
-    } finally {
-        generateBtn.disabled = false;
-        loadingSpinner.classList.add('hidden');
-    }
-}
+    });
+});
 </script>
 {% endblock %}
