@@ -4,7 +4,7 @@ import json
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_cors import CORS
@@ -22,7 +22,6 @@ from pptx import Presentation
 import time
 from flask import send_from_directory
 from functools import wraps
-from flask_wtf.csrf import CSRFError, ValidationError
 
 # Load environment variables
 load_dotenv()
@@ -189,6 +188,7 @@ app = create_app()
 # Custom CSRF error handler
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
+    app.logger.error(f"CSRF Error: {str(e)}")
     return jsonify(error="CSRF token validation failed"), 400
 
 # Custom decorator for JSON CSRF validation
@@ -199,12 +199,14 @@ def csrf_protect_json():
             # Check for CSRF token in X-CSRF-Token header
             token = request.headers.get('X-CSRF-Token')
             if not token:
+                app.logger.error("Missing CSRF token in request headers")
                 return jsonify(error="Missing CSRF token"), 400
             
-            # Validate token
+            # Validate token using Flask-WTF's validate_csrf
             try:
-                csrf.validate_csrf(token)
-            except ValidationError:
+                csrf.protect()
+            except CSRFError as e:
+                app.logger.error(f"CSRF validation failed: {str(e)}")
                 return jsonify(error="Invalid CSRF token"), 400
                 
             return view_function(*args, **kwargs)
@@ -215,7 +217,9 @@ def csrf_protect_json():
 @app.after_request
 def add_csrf_token(response):
     if 'text/html' in response.headers.get('Content-Type', ''):
-        response.set_cookie('csrf_token', csrf.generate_csrf())
+        token = generate_csrf()  # Using Flask-WTF's generate_csrf
+        app.logger.debug(f"Generated new CSRF token")
+        response.set_cookie('csrf_token', token, secure=True, httponly=True, samesite='Strict')
     return response
 
 @login_manager.user_loader

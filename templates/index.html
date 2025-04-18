@@ -87,6 +87,9 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             // Get CSRF token from meta tag
             const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+            if (!csrfToken) {
+                throw new Error('CSRF token not found');
+            }
             
             // Get form data
             const formData = {
@@ -96,16 +99,17 @@ document.addEventListener('DOMContentLoaded', function() {
             };
             
             console.log('Submitting form data:', formData);
+            console.log('CSRF Token:', csrfToken);
             
             // Send POST request
             const response = await fetch('/generate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken  // Changed from X-CSRFToken to X-CSRF-Token
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify(formData),
-                credentials: 'same-origin'  // Important for CSRF
+                credentials: 'same-origin'
             });
             
             console.log('Response status:', response.status);
