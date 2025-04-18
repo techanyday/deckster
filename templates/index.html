@@ -1,256 +1,98 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="presentation-form">
-    <div class="form-header">
-        <h1>AI PowerPoint Generator</h1>
-        <p>Create professional presentations in seconds with AI</p>
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-3xl mx-auto">
+        <h1 class="text-4xl font-bold text-center mb-8">Generate Professional Presentations</h1>
+        
+        {% if current_user.is_authenticated %}
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <form id="presentationForm" class="space-y-6">
+                    <div>
+                        <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
+                        <input type="text" id="topic" name="topic" required
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                    </div>
+                    
+                    <div>
+                        <label for="numSlides" class="block text-sm font-medium text-gray-700">Number of Slides</label>
+                        <input type="number" id="numSlides" name="numSlides" min="3" max="10" value="5"
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-primary text-white py-2 px-4 rounded-md hover:bg-primary-dark transition-colors">
+                        Generate Presentation
+                    </button>
+                </form>
+                
+                <div id="loadingIndicator" class="hidden mt-4">
+                    <div class="flex items-center justify-center">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                        <span class="ml-2">Generating your presentation...</span>
+                    </div>
+                </div>
+                
+                <div id="errorMessage" class="hidden mt-4 p-4 bg-red-100 text-red-700 rounded-md"></div>
+                
+                <div id="downloadSection" class="hidden mt-4">
+                    <div class="p-4 bg-green-100 text-green-700 rounded-md">
+                        <p>Your presentation is ready!</p>
+                        <a id="downloadLink" href="#" class="mt-2 inline-block bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors">
+                            Download Presentation
+                        </a>
+                    </div>
+                </div>
+            </div>
+        {% else %}
+            <div class="text-center">
+                <p class="text-xl mb-4">Please log in to start generating presentations</p>
+                <a href="{{ url_for('google.login') }}" class="inline-block bg-primary text-white py-2 px-6 rounded-md hover:bg-primary-dark transition-colors">
+                    Login with Google
+                </a>
+            </div>
+        {% endif %}
     </div>
-
-    <form id="presentationForm" class="form-container">
-        <div class="form-group">
-            <label for="topic">Presentation Topic</label>
-            <input type="text" id="topic" name="topic" required 
-                   placeholder="Enter your presentation topic">
-        </div>
-
-        <div class="form-group">
-            <label for="slides">Number of Slides</label>
-            <input type="number" id="slides" name="slides" required 
-                   min="1" max="15" value="5">
-        </div>
-
-        <div class="form-group">
-            <label>Customize Colors</label>
-            <div class="color-options">
-                <div class="color-picker">
-                    <label for="primaryColor">Primary</label>
-                    <input type="color" id="primaryColor" value="#4a90e2">
-                </div>
-                <div class="color-picker">
-                    <label for="secondaryColor">Secondary</label>
-                    <input type="color" id="secondaryColor" value="#2ecc71">
-                </div>
-                <div class="color-picker">
-                    <label for="accentColor">Accent</label>
-                    <input type="color" id="accentColor" value="#e74c3c">
-                </div>
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label>Background Style</label>
-            <div class="background-options">
-                <label class="radio-option">
-                    <input type="radio" name="background" value="solid" checked>
-                    <span>Solid Color</span>
-                </label>
-                <label class="radio-option">
-                    <input type="radio" name="background" value="gradient">
-                    <span>Gradient</span>
-                </label>
-                <label class="radio-option">
-                    <input type="radio" name="background" value="pattern">
-                    <span>Pattern</span>
-                </label>
-            </div>
-        </div>
-
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-magic"></i>
-                Generate Presentation
-            </button>
-        </div>
-    </form>
 </div>
-
-<style>
-.presentation-form {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem;
-    background: var(--white);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-md);
-}
-
-.form-header {
-    text-align: center;
-    margin-bottom: 2rem;
-}
-
-.form-header h1 {
-    font-size: 2rem;
-    color: var(--text-color);
-    margin-bottom: 0.5rem;
-}
-
-.form-header p {
-    color: var(--text-light);
-    font-size: 1.1rem;
-}
-
-.form-container {
-    display: grid;
-    gap: 1.5rem;
-}
-
-.form-group {
-    display: grid;
-    gap: 0.5rem;
-}
-
-.form-group label {
-    font-weight: 500;
-    color: var(--text-color);
-}
-
-.form-group input[type="text"],
-.form-group input[type="number"] {
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    font-size: 1rem;
-    transition: all 0.2s;
-}
-
-.form-group input[type="text"]:focus,
-.form-group input[type="number"]:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-    outline: none;
-}
-
-.color-options {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
-}
-
-.color-picker {
-    display: grid;
-    gap: 0.25rem;
-}
-
-.color-picker label {
-    font-size: 0.9rem;
-    color: var(--text-light);
-}
-
-.color-picker input[type="color"] {
-    width: 100%;
-    height: 40px;
-    padding: 0;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    cursor: pointer;
-}
-
-.background-options {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
-}
-
-.radio-option {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.radio-option:hover {
-    border-color: var(--primary-color);
-    background: rgba(74, 144, 226, 0.05);
-}
-
-.radio-option input[type="radio"] {
-    margin: 0;
-}
-
-.radio-option span {
-    font-size: 0.95rem;
-    color: var(--text-color);
-}
-
-.form-actions {
-    margin-top: 1rem;
-    display: flex;
-    justify-content: center;
-}
-
-.form-actions .btn {
-    min-width: 200px;
-    justify-content: center;
-}
-
-@media (max-width: 768px) {
-    .presentation-form {
-        padding: 1.5rem;
-    }
-
-    .form-header h1 {
-        font-size: 1.75rem;
-    }
-
-    .form-header p {
-        font-size: 1rem;
-    }
-
-    .color-options,
-    .background-options {
-        grid-template-columns: 1fr;
-    }
-}
-</style>
+{% endblock %}
 
 {% block extra_scripts %}
 <script>
-document.getElementById('presentationForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitButton = e.target.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('presentationForm');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const errorMessage = document.getElementById('errorMessage');
+    const downloadSection = document.getElementById('downloadSection');
+    const downloadLink = document.getElementById('downloadLink');
 
-    try {
-        const formData = {
-            topic: document.getElementById('topic').value,
-            slides: document.getElementById('slides').value,
-            colors: {
-                primary: document.getElementById('primaryColor').value,
-                secondary: document.getElementById('secondaryColor').value,
-                accent: document.getElementById('accentColor').value
-            },
-            background: document.querySelector('input[name="background"]:checked').value
-        };
-
-        const response = await fetch('/generate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formData)
+    if (form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            // Reset UI state
+            loadingIndicator.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
+            downloadSection.classList.add('hidden');
+            
+            try {
+                const response = await apiCall('/generate', 'POST', {
+                    topic: document.getElementById('topic').value,
+                    num_slides: parseInt(document.getElementById('numSlides').value)
+                });
+                
+                if (response.success) {
+                    downloadLink.href = response.download_url;
+                    downloadSection.classList.remove('hidden');
+                } else {
+                    throw new Error(response.error || 'Failed to generate presentation');
+                }
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.classList.remove('hidden');
+            } finally {
+                loadingIndicator.classList.add('hidden');
+            }
         });
-
-        const data = await response.json();
-        
-        if (data.status === 'success') {
-            window.location.href = `/download/${data.filename}`;
-        } else {
-            throw new Error(data.message || 'Failed to generate presentation');
-        }
-    } catch (error) {
-        alert(error.message);
-    } finally {
-        submitButton.disabled = false;
-        submitButton.innerHTML = '<i class="fas fa-magic"></i> Generate Presentation';
     }
 });
 </script>
-{% endblock %}
 {% endblock %}

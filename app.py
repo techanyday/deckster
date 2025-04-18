@@ -254,6 +254,12 @@ def google_logged_in(blueprint, token):
         flash("An unexpected error occurred during login.", category="error")
         return False
 
+@app.after_request
+def add_csrf_header(response):
+    if response.mimetype == 'application/json':
+        response.headers.set('X-CSRFToken', csrf.generate_csrf())
+    return response
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -293,71 +299,58 @@ def resend_verification():
 @login_required
 def generate():
     try:
+        # Validate CSRF token
+        csrf.protect()
+        
+        data = request.get_json()
+        if not data or 'topic' not in data:
+            return jsonify({'error': 'Missing topic in request'}), 400
+
+        topic = data['topic']
+        num_slides = data.get('num_slides', 5)  # Default to 5 slides if not specified
+
+        # Check user limits
+        max_slides = get_max_slides(current_user)
+        if num_slides > max_slides:
+            return jsonify({
+                'error': f'Free accounts are limited to {max_slides} slides per presentation'
+            }), 403
+
         if not check_user_limits(current_user):
             return jsonify({
-                'status': 'error',
-                'message': 'You have reached your presentation limit. Please upgrade your plan.'
-            }), 400
+                'error': 'You have reached your daily presentation limit'
+            }), 403
 
-        # Get form data
-        mode = request.form.get('mode')
-        input_text = request.form.get('input')
-        template = request.form.get('template', 'modern')
-        
-        if not mode or not input_text:
-            return jsonify({
-                'status': 'error',
-                'message': 'Mode and input text are required'
-            }), 400
-            
         # Generate presentation content
-        content = generate_presentation_content(input_text, mode)
-        if not content:
-            return jsonify({
-                'status': 'error',
-                'message': 'Failed to generate presentation content'
-            }), 500
-            
-        try:
-            # Parse content as JSON
-            slides = json.loads(content)
-            
-            # Create PowerPoint
-            temp_ppt = create_ppt(slides, template)
-            if not temp_ppt:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Failed to create PowerPoint file'
-                }), 500
-            
-            # Save presentation to database
-            presentation = Presentation(
-                title=slides[0]['title'] if slides else "Untitled Presentation",
-                created_at=datetime.utcnow(),
-                user=current_user
-            )
-            db.session.add(presentation)
-            db.session.commit()
-            
-            return jsonify({
-                'status': 'success',
-                'content': content,
-                'filename': os.path.basename(temp_ppt.name)
-            })
-            
-        except Exception as e:
-            app.logger.error(f"Error creating presentation file: {str(e)}")
-            return jsonify({
-                'status': 'error',
-                'message': 'Failed to create presentation file'
-            }), 500
-            
+        content = generate_presentation_content(topic, num_slides)
+        
+        # Create PowerPoint
+        temp_ppt = tempfile.NamedTemporaryFile(suffix='.pptx', delete=False)
+        create_ppt(content, temp_ppt.name)
+        
+        # Add watermark if needed
+        if current_user.subscription_type == 'free':
+            add_watermark(temp_ppt.name)
+
+        # Save presentation to database
+        presentation = Presentation(
+            title=content[0]['title'] if content else "Untitled Presentation",
+            file_path=temp_ppt.name,
+            user=current_user,
+            status='completed'
+        )
+        db.session.add(presentation)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'presentation_id': presentation.id,
+            'download_url': url_for('download_presentation', filename=presentation.file_path.split('/')[-1])
+        })
+
     except Exception as e:
         app.logger.error(f"Error generating presentation: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': 'An error occurred while generating the presentation'
-        }), 500
+        return jsonify({'error': 'Failed to generate presentation'}), 500
 
 @app.route('/pricing')
 def pricing():
