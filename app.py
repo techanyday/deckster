@@ -3,11 +3,10 @@ import os
 import json
 from dotenv import load_dotenv
 import logging
-from utils.utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
+from datetime import datetime
 from flask_wtf.csrf import CSRFProtect
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from datetime import datetime
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_cors import CORS
 import tempfile
 import requests
@@ -18,6 +17,7 @@ from flask_dance.contrib.google import make_google_blueprint, google
 from flask_dance.consumer.storage.sqla import OAuthConsumerMixin, SQLAlchemyStorage
 from flask_dance.consumer import oauth_authorized
 from sqlalchemy.orm.exc import NoResultFound
+from utils.utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
 
 # Load environment variables
 load_dotenv()
@@ -27,111 +27,30 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
 
-def create_app():
-    app = Flask(__name__)
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['WTF_CSRF_ENABLED'] = True
-    
-    # Initialize extensions with app
-    db.init_app(app)
-    login_manager.init_app(app)
-    csrf.init_app(app)
-    
-    # Configure Google OAuth
-    app.config['GOOGLE_OAUTH_CLIENT_ID'] = os.getenv('GOOGLE_CLIENT_ID')
-    app.config['GOOGLE_OAUTH_CLIENT_SECRET'] = os.getenv('GOOGLE_CLIENT_SECRET')
-    
-    google_bp = make_google_blueprint(
-        client_id=app.config['GOOGLE_OAUTH_CLIENT_ID'],
-        client_secret=app.config['GOOGLE_OAUTH_CLIENT_SECRET'],
-        scope=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-        redirect_url='/google/authorized'
-    )
-    
-    app.register_blueprint(google_bp, url_prefix='/login')
-    
-    # Configure OAuth storage
-    google_bp.storage = SQLAlchemyStorage(OAuth, db.session, user=current_user)
-    
-    return app
-
-app = create_app()
-
-@app.before_request
-def before_request():
-    if not request.is_secure and app.env != 'development':
-        url = request.url.replace('http://', 'https://', 1)
-        return redirect(url, code=301)
-
-# Configure logging for production
-if os.getenv('ENVIRONMENT') == 'production':
-    logging.basicConfig(level=logging.INFO)
-    gunicorn_logger = logging.getLogger('gunicorn.error')
-    app.logger.handlers = gunicorn_logger.handlers
-    app.logger.setLevel(gunicorn_logger.level)
-else:
-    # Development logging
-    logging.basicConfig(level=logging.DEBUG)
-    app.logger.setLevel(logging.DEBUG)
-
-# Get database URL - default to SQLite for local development
-database_url = os.getenv('DATABASE_URL')
-if database_url and database_url.startswith('postgres://'):
-    # Render uses postgres://, but SQLAlchemy needs postgresql://
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
-
-app.config.update(
-    SQLALCHEMY_DATABASE_URI=database_url or 'sqlite:///app.db',
-    SQLALCHEMY_TRACK_MODIFICATIONS=False,
-    SECRET_KEY=os.getenv('SECRET_KEY', 'dev-secret-key-123'),
-    WTF_CSRF_ENABLED=True,
-)
-
-# Import models
-class User(db.Model):
+# Models
+class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     name = db.Column(db.String(120))
-    subscription_type = db.Column(db.String(20), default='free')
-    presentations = db.relationship('Presentation', backref='user', lazy=True)
     google_id = db.Column(db.String(256), unique=True)
 
     def get_id(self):
         return str(self.id)
 
-    @property
-    def is_active(self):
-        return True
-
-    @property
-    def is_authenticated(self):
-        return True
-
-    @property
-    def is_anonymous(self):
-        return False
-
-class OAuth(db.Model):
+class OAuth(OAuthConsumerMixin, db.Model):
     __tablename__ = "flask_dance_oauth"
-    id = db.Column(db.Integer, primary_key=True)
-    provider = db.Column(db.String(50), nullable=False)
-    token = db.Column(db.Text, nullable=False)
+    provider_user_id = db.Column(db.String(256), unique=True)
     user_id = db.Column(db.Integer, db.ForeignKey(User.id))
     user = db.relationship(User)
-    google_id = db.Column(db.String(256), unique=True)
 
     def set_token(self, token):
         app.logger.debug(f"Token type: {type(token)}")
         app.logger.debug(f"Token content: {token}")
-        app.logger.debug(f"Token dir: {dir(token)}")
         
         # Convert token to dictionary if it's not already
         if not isinstance(token, dict):
             try:
                 if hasattr(token, 'token'):
-                    # Handle Flask-Dance token object
                     token = token.token
                 token = {
                     'access_token': getattr(token, 'access_token', None),
@@ -189,11 +108,79 @@ class OAuth(db.Model):
 
 class Presentation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(200), nullable=False)
-    content = db.Column(db.Text, nullable=False)
-    file_path = db.Column(db.String(500), nullable=False)
+    title = db.Column(db.String(120), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user = db.relationship('User', backref=db.backref('presentations', lazy=True))
+    file_path = db.Column(db.String(500))
+    status = db.Column(db.String(50), default='pending')
+    error_message = db.Column(db.Text)
+
+def create_app():
+    app = Flask(__name__)
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['WTF_CSRF_ENABLED'] = True
+    
+    # Initialize extensions with app
+    db.init_app(app)
+    login_manager.init_app(app)
+    csrf.init_app(app)
+    
+    # Configure Google OAuth
+    app.config['GOOGLE_OAUTH_CLIENT_ID'] = os.getenv('GOOGLE_CLIENT_ID')
+    app.config['GOOGLE_OAUTH_CLIENT_SECRET'] = os.getenv('GOOGLE_CLIENT_SECRET')
+    
+    google_bp = make_google_blueprint(
+        client_id=app.config['GOOGLE_OAUTH_CLIENT_ID'],
+        client_secret=app.config['GOOGLE_OAUTH_CLIENT_SECRET'],
+        scope=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+        redirect_url='/google/authorized'
+    )
+    
+    app.register_blueprint(google_bp, url_prefix='/login')
+    
+    # Configure OAuth storage
+    google_bp.storage = SQLAlchemyStorage(OAuth, db.session, user=current_user)
+    
+    return app
+
+app = create_app()
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+@app.before_request
+def before_request():
+    if not request.is_secure and app.env != 'development':
+        url = request.url.replace('http://', 'https://', 1)
+        return redirect(url, code=301)
+
+# Configure logging for production
+if os.getenv('ENVIRONMENT') == 'production':
+    logging.basicConfig(level=logging.INFO)
+    gunicorn_logger = logging.getLogger('gunicorn.error')
+    app.logger.handlers = gunicorn_logger.handlers
+    app.logger.setLevel(gunicorn_logger.level)
+else:
+    # Development logging
+    logging.basicConfig(level=logging.DEBUG)
+    app.logger.setLevel(logging.DEBUG)
+
+# Get database URL - default to SQLite for local development
+database_url = os.getenv('DATABASE_URL')
+if database_url and database_url.startswith('postgres://'):
+    # Render uses postgres://, but SQLAlchemy needs postgresql://
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
+app.config.update(
+    SQLALCHEMY_DATABASE_URI=database_url or 'sqlite:///app.db',
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    SECRET_KEY=os.getenv('SECRET_KEY', 'dev-secret-key-123'),
+    WTF_CSRF_ENABLED=True,
+)
 
 # Create database tables
 with app.app_context():
@@ -202,15 +189,6 @@ with app.app_context():
         app.logger.info("Database tables created successfully")
     except Exception as e:
         app.logger.error(f"Error creating database tables: {str(e)}")
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-# Set OpenAI API key
-openai.api_key = os.getenv('OPENAI_API_KEY')
-
-CORS(app)
 
 @oauth_authorized.connect_via(google_bp)
 def google_logged_in(blueprint, token):
@@ -357,8 +335,7 @@ def generate():
             # Save presentation to database
             presentation = Presentation(
                 title=slides[0]['title'] if slides else "Untitled Presentation",
-                content=content,
-                file_path=temp_ppt.name,
+                created_at=datetime.utcnow(),
                 user=current_user
             )
             db.session.add(presentation)
