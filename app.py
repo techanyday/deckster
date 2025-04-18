@@ -121,54 +121,61 @@ google_bp.storage = SQLAlchemyStorage(OAuth, db.session, user=current_user)
 
 @oauth_authorized.connect_via(google_bp)
 def google_logged_in(blueprint, token):
-    if not token:
-        flash("Failed to log in with Google.", category="error")
-        return False
-
-    resp = blueprint.session.get("/oauth2/v1/userinfo")
-    if not resp.ok:
-        flash("Failed to fetch user info from Google.", category="error")
-        return False
-
-    google_info = resp.json()
-    google_user_id = str(google_info["id"])
-
-    # Find this OAuth token in the database, or create it
-    query = OAuth.query.filter_by(
-        provider=blueprint.name,
-        provider_user_id=google_user_id,
-    )
     try:
-        oauth = query.one()
-    except NoResultFound:
-        oauth = OAuth(
+        if not token:
+            app.logger.error("No token received from Google")
+            flash("Failed to log in with Google.", category="error")
+            return False
+
+        resp = blueprint.session.get("/oauth2/v1/userinfo")
+        if not resp.ok:
+            app.logger.error(f"Failed to get user info from Google: {resp.text}")
+            flash("Failed to fetch user info from Google.", category="error")
+            return False
+
+        google_info = resp.json()
+        google_user_id = str(google_info["id"])
+
+        # Find this OAuth token in the database, or create it
+        query = OAuth.query.filter_by(
             provider=blueprint.name,
             provider_user_id=google_user_id,
-            token=token,
         )
+        try:
+            oauth = query.one()
+        except NoResultFound:
+            oauth = OAuth(
+                provider=blueprint.name,
+                provider_user_id=google_user_id,
+                token=token,
+            )
 
-    if oauth.user:
-        login_user(oauth.user)
-        flash("Successfully signed in with Google.")
+        if oauth.user:
+            login_user(oauth.user)
+            flash("Successfully signed in with Google.")
+        else:
+            # Create a new local user account for this user
+            user = User(
+                email=google_info["email"],
+                name=google_info.get("name", ""),  # Make name optional
+                google_id=google_user_id,
+            )
+            # Associate the new local user account with the OAuth token
+            oauth.user = user
+            # Save and commit our database models
+            db.session.add_all([user, oauth])
+            db.session.commit()
+            # Log in the new local user account
+            login_user(user)
+            flash("Successfully signed in with Google.")
 
-    else:
-        # Create a new local user account for this user
-        user = User(
-            email=google_info["email"],
-            name=google_info["name"],
-            google_id=google_user_id,
-        )
-        # Associate the new local user account with the OAuth token
-        oauth.user = user
-        # Save and commit our database models
-        db.session.add_all([user, oauth])
-        db.session.commit()
-        # Log in the new local user account
-        login_user(user)
-        flash("Successfully signed in with Google.")
+        # Disable Flask-Dance's default behavior for saving the OAuth token
+        return False
 
-    # Disable Flask-Dance's default behavior for saving the OAuth token
-    return False
+    except Exception as e:
+        app.logger.error(f"Error in Google OAuth callback: {str(e)}")
+        flash("An error occurred during Google sign-in. Please try again.", category="error")
+        return False
 
 @app.route('/')
 def index():
