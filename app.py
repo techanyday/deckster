@@ -32,7 +32,7 @@ google_bp = make_google_blueprint(
     client_id=os.getenv('GOOGLE_CLIENT_ID'),
     client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
     scope=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-    redirect_url='/google/authorized'
+    redirect_to='google_authorized'
 )
 
 # Models
@@ -127,7 +127,17 @@ class Presentation(db.Model):
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///app.db')
+    
+    # Configure logging
+    logging.basicConfig(level=logging.DEBUG)
+    app.logger.setLevel(logging.DEBUG)
+
+    # Configure database
+    database_url = os.getenv('DATABASE_URL')
+    if database_url and database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///app.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['WTF_CSRF_ENABLED'] = True
     
@@ -141,6 +151,14 @@ def create_app():
     
     # Configure OAuth storage
     google_bp.storage = SQLAlchemyStorage(OAuth, db.session, user=current_user)
+    
+    # Create database tables
+    with app.app_context():
+        try:
+            db.create_all()
+            app.logger.info("Database tables created successfully")
+        except Exception as e:
+            app.logger.error(f"Error creating database tables: {str(e)}")
     
     return app
 
@@ -156,109 +174,57 @@ def before_request():
         url = request.url.replace('http://', 'https://', 1)
         return redirect(url, code=301)
 
-# Configure logging for production
-if os.getenv('ENVIRONMENT') == 'production':
-    logging.basicConfig(level=logging.INFO)
-    gunicorn_logger = logging.getLogger('gunicorn.error')
-    app.logger.handlers = gunicorn_logger.handlers
-    app.logger.setLevel(gunicorn_logger.level)
-else:
-    # Development logging
-    logging.basicConfig(level=logging.DEBUG)
-    app.logger.setLevel(logging.DEBUG)
-
-# Get database URL - default to SQLite for local development
-database_url = os.getenv('DATABASE_URL')
-if database_url and database_url.startswith('postgres://'):
-    # Render uses postgres://, but SQLAlchemy needs postgresql://
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
-
-app.config.update(
-    SQLALCHEMY_DATABASE_URI=database_url or 'sqlite:///app.db',
-    SQLALCHEMY_TRACK_MODIFICATIONS=False,
-    SECRET_KEY=os.getenv('SECRET_KEY', 'dev-secret-key-123'),
-    WTF_CSRF_ENABLED=True,
-)
-
-# Create database tables
-with app.app_context():
-    try:
-        db.create_all()
-        app.logger.info("Database tables created successfully")
-    except Exception as e:
-        app.logger.error(f"Error creating database tables: {str(e)}")
-
 @oauth_authorized.connect_via(google_bp)
 def google_logged_in(blueprint, token):
     try:
-        app.logger.debug(f"OAuth callback received with token type: {type(token)}")
-        if token is None:
+        if not token:
             app.logger.error("Failed to get OAuth token")
-            flash("Failed to log in with Google.", category="error")
             return False
 
-        # Get user info from Google
         resp = blueprint.session.get('/oauth2/v2/userinfo')
         if not resp.ok:
             app.logger.error(f"Failed to get user info: {resp.text}")
-            flash("Failed to get user info from Google.", category="error")
             return False
 
         google_info = resp.json()
-        google_user_id = str(google_info['id'])
+        email = google_info['email']
         
-        # Find this OAuth token in the database, or create it
-        query = OAuth.query.filter_by(
-            provider=blueprint.name,
-            provider_user_id=google_user_id,
-        )
-        try:
-            oauth = query.first()
-            if not oauth:
-                oauth = OAuth(
-                    provider=blueprint.name,
-                    provider_user_id=google_user_id,
-                    token=token,
-                )
-        except Exception as e:
-            app.logger.error(f"Error querying OAuth: {str(e)}")
-            flash("An error occurred during login.", category="error")
-            return False
-
-        if oauth.user:
-            login_user(oauth.user)
-            flash("Successfully signed in with Google.", category="success")
-        else:
-            # Create a new local user
+        # Find or create user
+        user = User.query.filter_by(email=email).first()
+        if not user:
             user = User(
-                email=google_info['email'],
-                name=google_info['name'],
-                google_id=google_user_id,
+                email=email,
+                name=google_info.get('name', email.split('@')[0]),
+                google_id=google_info['id']
             )
-            oauth.user = user
-            db.session.add_all([user, oauth])
+            db.session.add(user)
+            
+            # Create OAuth entry
+            oauth = OAuth(
+                provider=blueprint.name,
+                provider_user_id=google_info['id'],
+                token=token,
+                user=user
+            )
+            db.session.add(oauth)
+            
             try:
                 db.session.commit()
-                login_user(user)
-                flash("Successfully signed in with Google.", category="success")
             except Exception as e:
                 app.logger.error(f"Error saving user: {str(e)}")
                 db.session.rollback()
-                flash("An error occurred during login.", category="error")
                 return False
-
-        return False  # Disable Flask-Dance's default behavior
+        
+        # Log in the user
+        login_user(user)
+        app.logger.info(f"Successfully logged in user {email}")
+        
+        # Return False to disable Flask-Dance's default behavior
+        return False
         
     except Exception as e:
-        app.logger.error(f"Unexpected error in google_logged_in: {str(e)}")
-        flash("An unexpected error occurred during login.", category="error")
+        app.logger.error(f"Error in OAuth callback: {str(e)}")
         return False
-
-@app.after_request
-def add_csrf_header(response):
-    if response.mimetype == 'application/json':
-        response.headers.set('X-CSRFToken', csrf.generate_csrf())
-    return response
 
 @app.route('/')
 def index():
