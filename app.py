@@ -58,7 +58,8 @@ login_manager.login_view = 'google.login'
 google_bp = make_google_blueprint(
     client_id=os.getenv('GOOGLE_CLIENT_ID'),
     client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
-    scope=['profile', 'email'],
+    scope=['https://www.googleapis.com/auth/userinfo.email',
+           'https://www.googleapis.com/auth/userinfo.profile'],
     redirect_to='index'
 )
 app.register_blueprint(google_bp, url_prefix='/login')
@@ -127,7 +128,7 @@ def google_logged_in(blueprint, token):
             flash("Failed to log in with Google.", category="error")
             return False
 
-        resp = blueprint.session.get("/oauth2/v1/userinfo")
+        resp = blueprint.session.get("https://www.googleapis.com/oauth2/v2/userinfo")
         if not resp.ok:
             app.logger.error(f"Failed to get user info from Google: {resp.text}")
             flash("Failed to fetch user info from Google.", category="error")
