@@ -4,7 +4,7 @@ import json
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
-from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError, ValidationError
+from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError, validate_csrf
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_cors import CORS
@@ -218,13 +218,13 @@ def csrf_protect_json():
             
             try:
                 app.logger.debug("Validating CSRF token")
-                csrf.validate_csrf(token)
-                app.logger.debug("CSRF token validation successful")
-            except ValidationError as e:
+                validate_csrf(token)
+                app.logger.info("CSRF token validation successful")
+                return view_function(*args, **kwargs)
+            except Exception as e:
                 app.logger.error(f"CSRF validation failed: {str(e)}")
                 return jsonify(error="Invalid CSRF token"), 400
             
-            return view_function(*args, **kwargs)
         return wrapped_view
     return decorator
 
@@ -232,7 +232,7 @@ def csrf_protect_json():
 @app.after_request
 def add_csrf_token(response):
     if 'text/html' in response.headers.get('Content-Type', ''):
-        token = generate_csrf()  # Using Flask-WTF's generate_csrf
+        token = generate_csrf()
         app.logger.debug(f"Generated new CSRF token")
         response.set_cookie('csrf_token', token, secure=True, httponly=True, samesite='Strict')
     return response
