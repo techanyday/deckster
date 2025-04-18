@@ -263,6 +263,9 @@ def resend_verification():
         'message': 'Email verification is not available. Please use Google to sign in.'
     }), 400
 
+# Ensure static folder exists
+os.makedirs(os.path.join(app.root_path, 'static', 'presentations'), exist_ok=True)
+
 @app.route('/generate', methods=['POST'])
 @login_required
 def generate_presentation():
@@ -338,14 +341,16 @@ def generate_presentation():
                 p.level = 0
 
         # Save the presentation
-        output_path = os.path.join(app.static_folder, 'presentations')
-        os.makedirs(output_path, exist_ok=True)
-        
+        output_path = os.path.join(app.root_path, 'static', 'presentations')
         filename = f"presentation_{int(time.time())}.pptx"
         full_path = os.path.join(output_path, filename)
-        prs.save(full_path)
         
-        app.logger.info(f'Presentation saved to {full_path}')
+        try:
+            prs.save(full_path)
+            app.logger.info(f'Presentation saved to {full_path}')
+        except Exception as e:
+            app.logger.error(f'Error saving presentation: {str(e)}')
+            return jsonify({'success': False, 'error': 'Failed to save presentation'}), 500
         
         # Return success response with download URL
         return jsonify({
