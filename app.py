@@ -103,22 +103,43 @@ class OAuth(db.Model):
     google_id = db.Column(db.String(256), unique=True)
 
     def set_token(self, token):
+        # Convert token to dictionary if it's not already
+        if not isinstance(token, dict):
+            token = {
+                'access_token': getattr(token, 'access_token', None),
+                'token_type': getattr(token, 'token_type', None),
+                'scope': getattr(token, 'scope', []),
+                'expires_in': getattr(token, 'expires_in', None),
+                'expires_at': getattr(token, 'expires_at', None),
+                'id_token': getattr(token, 'id_token', None)
+            }
+        
+        # Clean up the token dictionary
         token_dict = {
-            'access_token': token.get('access_token'),
-            'token_type': token.get('token_type'),
+            'access_token': str(token.get('access_token', '')),
+            'token_type': str(token.get('token_type', '')),
             'scope': token.get('scope', []),
-            'expires_in': token.get('expires_in'),
-            'expires_at': token.get('expires_at'),
-            'id_token': token.get('id_token')
+            'expires_in': int(token.get('expires_in', 0)),
+            'expires_at': float(token.get('expires_at', 0)),
+            'id_token': str(token.get('id_token', ''))
         }
+        
+        # Convert scope to string if it's a list
+        if isinstance(token_dict['scope'], list):
+            token_dict['scope'] = ' '.join(token_dict['scope'])
+            
         self.token = json.dumps(token_dict)
 
     def get_token(self):
-        token_dict = json.loads(self.token)
-        # Convert scope back to list if it was stored as a string
-        if isinstance(token_dict.get('scope'), str):
-            token_dict['scope'] = token_dict['scope'].split(' ')
-        return token_dict
+        try:
+            token_dict = json.loads(self.token)
+            # Convert scope back to list if it was stored as a string
+            if isinstance(token_dict.get('scope'), str):
+                token_dict['scope'] = token_dict['scope'].split()
+            return token_dict
+        except json.JSONDecodeError:
+            app.logger.error("Failed to decode token JSON")
+            return {}
 
 class Presentation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
