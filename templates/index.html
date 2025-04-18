@@ -77,7 +77,6 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('presentationForm');
-    const loadingIndicator = document.getElementById('loadingIndicator');
     const errorMessage = document.getElementById('errorMessage');
     const downloadSection = document.getElementById('downloadSection');
     const downloadLink = document.getElementById('downloadLink');
@@ -87,9 +86,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (form) {
         form.addEventListener('submit', async function(e) {
             e.preventDefault();
-            console.log('Form submitted');
             
-            loadingIndicator.classList.remove('hidden');
             errorMessage.classList.add('hidden');
             downloadSection.classList.add('hidden');
             generateBtn.disabled = true;
@@ -99,7 +96,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const formData = {
                     topic: document.getElementById('topic').value,
                     num_slides: parseInt(document.getElementById('slides').value),
-                    theme: document.getElementById('theme').value
+                    theme: document.getElementById('theme').value,
+                    csrf_token: document.querySelector('input[name="csrf_token"]').value
                 };
                 
                 console.log('Sending data:', formData);
@@ -108,9 +106,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                        'X-CSRF-Token': formData.csrf_token
                     },
-                    body: JSON.stringify(formData)
+                    body: JSON.stringify(formData),
+                    credentials: 'same-origin'
                 });
                 
                 console.log('Response status:', response.status);
@@ -129,7 +128,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 errorMessage.textContent = 'An error occurred while generating the presentation';
                 errorMessage.classList.remove('hidden');
             } finally {
-                loadingIndicator.classList.add('hidden');
                 generateBtn.disabled = false;
                 loadingSpinner.classList.add('hidden');
             }

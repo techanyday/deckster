@@ -266,12 +266,18 @@ def resend_verification():
 def generate_presentation():
     app.logger.info('Generate presentation request received')
     try:
-        # Validate CSRF token
-        csrf.protect()
-        app.logger.debug('CSRF validation passed')
-
         data = request.get_json()
         app.logger.debug(f'Received data: {data}')
+
+        if not data:
+            app.logger.error('No JSON data received')
+            return jsonify({'success': False, 'error': 'No data received'}), 400
+
+        # Validate CSRF token
+        token = data.get('csrf_token')
+        if not token or not csrf.validate_csrf(token):
+            app.logger.error('CSRF validation failed')
+            return jsonify({'success': False, 'error': 'Invalid CSRF token'}), 400
 
         topic = data.get('topic')
         num_slides = data.get('num_slides', 5)
