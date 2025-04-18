@@ -6,7 +6,8 @@
     
     {% if current_user.is_authenticated %}
         <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
-            <form id="presentationForm" class="space-y-6">
+            <!-- Add method and action as fallback -->
+            <form id="presentationForm" class="space-y-6" method="POST" action="/generate">
                 <!-- Store CSRF token in a meta tag -->
                 <meta name="csrf-token" content="{{ csrf_token() }}">
 
@@ -69,75 +70,112 @@
 
 {% block extra_scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('presentationForm');
+// Log when the script loads
+console.log('Presentation form script loading...');
+
+// Function to handle form submission
+function handleFormSubmit(event) {
+    console.log('Form submit handler triggered');
+    event.preventDefault();
+    
+    // Show loading spinner
     const loadingSpinner = document.getElementById('loadingSpinner');
     const downloadSection = document.getElementById('downloadSection');
-    const downloadLink = document.getElementById('downloadLink');
     const errorMessage = document.getElementById('errorMessage');
+    const submitButton = event.target.querySelector('button[type="submit"]');
     
-    form.addEventListener('submit', async function(e) {
-        e.preventDefault();
+    loadingSpinner.classList.remove('hidden');
+    downloadSection.classList.add('hidden');
+    errorMessage.classList.add('hidden');
+    submitButton.disabled = true;
+    
+    try {
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        console.log('CSRF Token found:', !!csrfToken);
         
-        // Show loading spinner
-        loadingSpinner.classList.remove('hidden');
-        downloadSection.classList.add('hidden');
-        errorMessage.classList.add('hidden');
+        if (!csrfToken) {
+            throw new Error('CSRF token not found');
+        }
         
-        try {
-            // Get CSRF token from meta tag
-            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-            if (!csrfToken) {
-                throw new Error('CSRF token not found');
-            }
-            
-            // Get form data
-            const formData = {
-                topic: form.querySelector('#topic').value,
-                num_slides: parseInt(form.querySelector('#slides').value),
-                theme: form.querySelector('#theme').value
-            };
-            
-            console.log('Submitting form data:', formData);
-            console.log('CSRF Token:', csrfToken);
-            
-            // Send POST request
-            const response = await fetch('/generate', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken
-                },
-                body: JSON.stringify(formData),
-                credentials: 'same-origin'
-            });
-            
-            console.log('Response status:', response.status);
-            
+        // Get form data
+        const formData = {
+            topic: event.target.querySelector('#topic').value,
+            num_slides: parseInt(event.target.querySelector('#slides').value),
+            theme: event.target.querySelector('#theme').value
+        };
+        
+        console.log('Form data prepared:', formData);
+        
+        // Send POST request
+        console.log('Sending fetch request to /generate...');
+        fetch('/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify(formData),
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            console.log('Received response:', response.status);
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Server error');
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Server error');
+                });
             }
-            
-            // Parse response
-            const data = await response.json();
+            return response.json();
+        })
+        .then(data => {
             console.log('Response data:', data);
-            
             if (data.success) {
-                // Show download section
                 downloadSection.classList.remove('hidden');
                 downloadLink.href = data.download_url;
             } else {
                 throw new Error(data.error || 'Failed to generate presentation');
             }
-        } catch (error) {
+        })
+        .catch(error => {
             console.error('Error:', error);
             errorMessage.textContent = error.message;
             errorMessage.classList.remove('hidden');
-        } finally {
+        })
+        .finally(() => {
             loadingSpinner.classList.add('hidden');
-        }
-    });
+            submitButton.disabled = false;
+        });
+    } catch (error) {
+        console.error('Error in form handler:', error);
+        errorMessage.textContent = error.message;
+        errorMessage.classList.remove('hidden');
+        loadingSpinner.classList.add('hidden');
+        submitButton.disabled = false;
+    }
+}
+
+// Wait for DOM to be ready
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM Content Loaded');
+    
+    const form = document.getElementById('presentationForm');
+    if (!form) {
+        console.error('Form not found!');
+        return;
+    }
+    
+    console.log('Form found, attaching submit handler');
+    
+    // Remove any existing listeners
+    form.removeEventListener('submit', handleFormSubmit);
+    
+    // Add submit event listener
+    form.addEventListener('submit', handleFormSubmit);
+    
+    console.log('Form handler attached successfully');
 });
+
+// Double-check that the script runs
+console.log('Presentation form script loaded');
 </script>
 {% endblock %}
