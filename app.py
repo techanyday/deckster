@@ -31,6 +31,10 @@ if os.getenv('ENVIRONMENT') == 'production':
     gunicorn_logger = logging.getLogger('gunicorn.error')
     app.logger.handlers = gunicorn_logger.handlers
     app.logger.setLevel(gunicorn_logger.level)
+else:
+    # Development logging
+    logging.basicConfig(level=logging.DEBUG)
+    app.logger.setLevel(logging.DEBUG)
 
 # Get database URL - default to SQLite for local development
 database_url = os.getenv('DATABASE_URL')
@@ -123,6 +127,7 @@ google_bp.storage = SQLAlchemyStorage(OAuth, db.session, user=current_user)
 
 @oauth_authorized.connect_via(google_bp)
 def google_logged_in(blueprint, token):
+    app.logger.debug("OAuth callback started")
     try:
         if not token:
             app.logger.error("No token received from Google")
@@ -130,14 +135,18 @@ def google_logged_in(blueprint, token):
             return False
 
         try:
+            app.logger.debug("Getting user info from Google")
             resp = blueprint.session.get("https://www.googleapis.com/oauth2/v2/userinfo")
+            app.logger.debug(f"Google API response status: {resp.status_code}")
+            app.logger.debug(f"Google API response headers: {resp.headers}")
+            
             if not resp.ok:
                 app.logger.error(f"Failed to get user info from Google: {resp.text}")
                 flash("Failed to fetch user info from Google.", category="error")
                 return False
 
             google_info = resp.json()
-            app.logger.info(f"Received user info from Google: {google_info}")
+            app.logger.debug(f"Received user info from Google: {google_info}")
             
             if 'id' not in google_info:
                 app.logger.error("No user ID in Google response")
@@ -145,6 +154,7 @@ def google_logged_in(blueprint, token):
                 return False
 
             google_user_id = str(google_info["id"])
+            app.logger.debug(f"Processing user with Google ID: {google_user_id}")
 
             # Find this OAuth token in the database, or create it
             query = OAuth.query.filter_by(
@@ -153,7 +163,9 @@ def google_logged_in(blueprint, token):
             )
             try:
                 oauth = query.one()
+                app.logger.debug("Found existing OAuth token")
             except NoResultFound:
+                app.logger.debug("Creating new OAuth token")
                 oauth = OAuth(
                     provider=blueprint.name,
                     provider_user_id=google_user_id,
@@ -161,9 +173,11 @@ def google_logged_in(blueprint, token):
                 )
 
             if oauth.user:
+                app.logger.debug("Logging in existing user")
                 login_user(oauth.user)
                 flash("Successfully signed in with Google.")
             else:
+                app.logger.debug("Creating new user")
                 # Create a new local user account for this user
                 user = User(
                     email=google_info.get("email", ""),
@@ -175,19 +189,21 @@ def google_logged_in(blueprint, token):
                 # Save and commit our database models
                 db.session.add_all([user, oauth])
                 db.session.commit()
+                app.logger.debug("New user created and saved")
                 # Log in the new local user account
                 login_user(user)
                 flash("Successfully signed in with Google.")
 
+            app.logger.debug("OAuth callback completed successfully")
             return False
 
         except Exception as e:
-            app.logger.error(f"Error in Google OAuth callback: {str(e)}")
+            app.logger.error(f"Error in Google API request: {str(e)}", exc_info=True)
             flash("An error occurred during Google sign-in. Please try again.", category="error")
             return False
 
     except Exception as e:
-        app.logger.error(f"Error in Google OAuth callback: {str(e)}")
+        app.logger.error(f"Error in OAuth callback: {str(e)}", exc_info=True)
         flash("An error occurred during Google sign-in. Please try again.", category="error")
         return False
 
