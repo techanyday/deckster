@@ -3,12 +3,25 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Environment
-.env
-.venv
-env/
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environment
 venv/
+env/
 ENV/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment variables
+.env
+
+# Logs
+*.log
 
 # Database
 *.db
@@ -19,15 +32,12 @@ tmp/
 temp/
 *.tmp
 
-# IDE
-.vscode/
-.idea/
+# Temporary files from IDE
 *.swp
 *.swo
 
-# Logs
-*.log
-
 # Generated files
-*.pptx
 *.pdf
+
+# Keep PowerPoint templates
+!static/templates/*.pptx

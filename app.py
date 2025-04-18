@@ -346,31 +346,24 @@ def serve_presentation(filename):
         return jsonify({'error': 'File not found'}), 404
 
 def create_blank_presentation():
-    """Create a blank presentation with minimal required elements"""
-    app.logger.debug("Creating minimal blank presentation")
+    """Create a presentation using the default template"""
+    app.logger.debug("Creating presentation from template")
     try:
-        # Create new presentation without template
-        prs = Presentation()
+        # Get the default template path from python-pptx
+        from pptx.parts.presentation import _default_pptx_path
+        app.logger.debug(f"Using default template from: {_default_pptx_path}")
+        
+        # Create presentation from default template
+        prs = Presentation(_default_pptx_path)
         
         # Log initial state
         app.logger.debug(f"Presentation object type: {type(prs).__name__}")
         app.logger.debug(f"Presentation module: {prs.__class__.__module__}")
+        app.logger.debug(f"Slide masters: {len(prs.slide_masters)}")
+        app.logger.debug(f"Slide layouts: {[layout.name for layout in prs.slide_layouts]}")
         
-        # Access the first slide master
-        app.logger.info("Accessing slide master")
-        if not hasattr(prs, 'slide_masters') or len(prs.slide_masters) == 0:
-            app.logger.error("No slide masters found")
-            raise ValueError("Invalid presentation: no slide masters found")
-            
-        slide_master = prs.slide_masters[0]
-        app.logger.debug(f"Slide master found: {len(slide_master.shapes)} shapes")
-        
-        # Use the first layout (usually title slide)
-        if len(slide_master.slide_layouts) == 0:
-            app.logger.error("No slide layouts found")
-            raise ValueError("Invalid presentation: no slide layouts found")
-            
-        title_layout = slide_master.slide_layouts[0]
+        # Use title slide layout (usually the first one)
+        title_layout = prs.slide_layouts[0]
         app.logger.debug(f"Using layout: {title_layout.name}")
         
         # Create title slide
