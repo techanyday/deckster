@@ -2,56 +2,73 @@
 
 {% block content %}
 <div class="container mx-auto px-4 py-8">
-    <div class="max-w-3xl mx-auto">
-        <h1 class="text-4xl font-bold text-center mb-8">Generate Professional Presentations</h1>
-        
-        {% if current_user.is_authenticated %}
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <form id="presentationForm" class="space-y-6">
-                    <div>
-                        <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
-                        <input type="text" id="topic" name="topic" required
-                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
-                    </div>
-                    
-                    <div>
-                        <label for="numSlides" class="block text-sm font-medium text-gray-700">Number of Slides</label>
-                        <input type="number" id="numSlides" name="numSlides" min="3" max="10" value="5"
-                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary">
-                    </div>
-                    
-                    <button type="submit" class="w-full bg-primary text-white py-2 px-4 rounded-md hover:bg-primary-dark transition-colors">
+    <h1 class="text-4xl font-bold text-center mb-12">Generate Professional Presentations</h1>
+    
+    {% if current_user.is_authenticated %}
+        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
+            <form id="presentationForm" class="space-y-6">
+                <div>
+                    <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
+                    <input type="text" id="topic" name="topic" required
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+
+                <div>
+                    <label for="slides" class="block text-sm font-medium text-gray-700">Number of Slides</label>
+                    <input type="number" id="slides" name="slides" min="1" max="20" value="5" required
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+
+                <div>
+                    <label for="theme" class="block text-sm font-medium text-gray-700">Color Theme</label>
+                    <select id="theme" name="theme" required
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <option value="professional">Professional (Blue & Gray)</option>
+                        <option value="modern">Modern (Purple & White)</option>
+                        <option value="elegant">Elegant (Black & Gold)</option>
+                        <option value="vibrant">Vibrant (Orange & Teal)</option>
+                        <option value="nature">Nature (Green & Brown)</option>
+                    </select>
+                </div>
+
+                <div class="flex justify-center">
+                    <button type="submit" id="generateBtn"
+                        class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" id="loadingSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
                         Generate Presentation
                     </button>
-                </form>
-                
-                <div id="loadingIndicator" class="hidden mt-4">
-                    <div class="flex items-center justify-center">
-                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                        <span class="ml-2">Generating your presentation...</span>
-                    </div>
                 </div>
-                
-                <div id="errorMessage" class="hidden mt-4 p-4 bg-red-100 text-red-700 rounded-md"></div>
-                
-                <div id="downloadSection" class="hidden mt-4">
-                    <div class="p-4 bg-green-100 text-green-700 rounded-md">
-                        <p>Your presentation is ready!</p>
-                        <a id="downloadLink" href="#" class="mt-2 inline-block bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors">
-                            Download Presentation
-                        </a>
-                    </div>
+            </form>
+
+            <div id="loadingIndicator" class="hidden mt-4">
+                <div class="flex items-center justify-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                    <span class="ml-2">Generating your presentation...</span>
                 </div>
             </div>
-        {% else %}
-            <div class="text-center">
-                <p class="text-xl mb-4">Please log in to start generating presentations</p>
-                <a href="{{ url_for('google.login') }}" class="inline-block bg-primary text-white py-2 px-6 rounded-md hover:bg-primary-dark transition-colors">
-                    Login with Google
+            
+            <div id="errorMessage" class="hidden mt-4 p-4 bg-red-100 text-red-700 rounded-md"></div>
+            
+            <div id="downloadSection" class="mt-8 text-center hidden">
+                <a href="#" id="downloadLink" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    <svg class="-ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                    Download Presentation
                 </a>
             </div>
-        {% endif %}
-    </div>
+        </div>
+    {% else %}
+        <div class="text-center">
+            <p class="text-xl mb-4">Please log in to start generating presentations</p>
+            <a href="{{ url_for('google.login') }}" class="inline-block bg-indigo-600 text-white py-2 px-6 rounded-md hover:bg-indigo-700 transition-colors">
+                Login with Google
+            </a>
+        </div>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -63,6 +80,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const errorMessage = document.getElementById('errorMessage');
     const downloadSection = document.getElementById('downloadSection');
     const downloadLink = document.getElementById('downloadLink');
+    const generateBtn = document.getElementById('generateBtn');
+    const loadingSpinner = document.getElementById('loadingSpinner');
 
     if (form) {
         form.addEventListener('submit', async function(e) {
@@ -72,11 +91,14 @@ document.addEventListener('DOMContentLoaded', function() {
             loadingIndicator.classList.remove('hidden');
             errorMessage.classList.add('hidden');
             downloadSection.classList.add('hidden');
+            generateBtn.disabled = true;
+            loadingSpinner.classList.remove('hidden');
             
             try {
                 const response = await apiCall('/generate', 'POST', {
                     topic: document.getElementById('topic').value,
-                    num_slides: parseInt(document.getElementById('numSlides').value)
+                    num_slides: parseInt(document.getElementById('slides').value),
+                    theme: document.getElementById('theme').value
                 });
                 
                 if (response.success) {
@@ -90,6 +112,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 errorMessage.classList.remove('hidden');
             } finally {
                 loadingIndicator.classList.add('hidden');
+                generateBtn.disabled = false;
+                loadingSpinner.classList.add('hidden');
             }
         });
     }
