@@ -6,61 +6,42 @@
     
     {% if current_user.is_authenticated %}
         <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
-            <form id="presentationForm" class="space-y-6">
+            <form id="presentationForm" class="needs-validation" method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div>
-                    <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
-                    <input type="text" id="topic" name="topic" required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                
+                <div class="mb-3">
+                    <label for="topic" class="form-label">Presentation Topic</label>
+                    <input type="text" class="form-control" id="topic" name="topic" required>
                 </div>
 
-                <div>
-                    <label for="slides" class="block text-sm font-medium text-gray-700">Number of Slides</label>
-                    <input type="number" id="slides" name="slides" min="1" max="20" value="5" required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                <div class="mb-3">
+                    <label for="slides" class="form-label">Number of Slides</label>
+                    <input type="number" class="form-control" id="slides" name="slides" min="1" max="20" value="5" required>
                 </div>
 
-                <div>
-                    <label for="theme" class="block text-sm font-medium text-gray-700">Color Theme</label>
-                    <select id="theme" name="theme" required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        <option value="professional">Professional (Blue & Gray)</option>
-                        <option value="modern">Modern (Purple & White)</option>
-                        <option value="elegant">Elegant (Black & Gold)</option>
-                        <option value="vibrant">Vibrant (Orange & Teal)</option>
-                        <option value="nature">Nature (Green & Brown)</option>
+                <div class="mb-3">
+                    <label for="theme" class="form-label">Theme</label>
+                    <select class="form-control" id="theme" name="theme" required>
+                        <option value="professional">Professional</option>
+                        <option value="creative">Creative</option>
+                        <option value="minimal">Minimal</option>
                     </select>
                 </div>
 
-                <div class="flex justify-center">
-                    <button type="submit" id="generateBtn"
-                        class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" id="loadingSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Generate Presentation
-                    </button>
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary">Generate Presentation</button>
                 </div>
+
+                <div id="loadingSpinner" class="text-center mt-3" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Generating your presentation...</p>
+                </div>
+
+                <div id="errorMessage" class="alert alert-danger mt-3" style="display: none;"></div>
+                <div id="successMessage" class="alert alert-success mt-3" style="display: none;"></div>
             </form>
-
-            <div id="loadingIndicator" class="hidden mt-4">
-                <div class="flex items-center justify-center">
-                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-                    <span class="ml-2">Generating your presentation...</span>
-                </div>
-            </div>
-
-            <div id="errorMessage" class="mt-4 p-4 bg-red-100 text-red-700 rounded-md hidden"></div>
-
-            <div id="downloadSection" class="mt-8 text-center hidden">
-                <a href="#" id="downloadLink" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                    <svg class="-ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
-                    </svg>
-                    Download Presentation
-                </a>
-            </div>
         </div>
     {% else %}
         <div class="text-center">
@@ -75,64 +56,71 @@
 
 {% block extra_scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+async function handleSubmit(event) {
+    event.preventDefault();
+    
     const form = document.getElementById('presentationForm');
-    const errorMessage = document.getElementById('errorMessage');
-    const downloadSection = document.getElementById('downloadSection');
-    const downloadLink = document.getElementById('downloadLink');
-    const generateBtn = document.getElementById('generateBtn');
+    const submitButton = form.querySelector('button[type="submit"]');
     const loadingSpinner = document.getElementById('loadingSpinner');
+    const errorMessage = document.getElementById('errorMessage');
+    const successMessage = document.getElementById('successMessage');
+    
+    // Clear previous messages
+    errorMessage.style.display = 'none';
+    successMessage.style.display = 'none';
+    
+    // Show loading state
+    submitButton.disabled = true;
+    loadingSpinner.style.display = 'block';
+    
+    try {
+        const formData = {
+            topic: form.topic.value,
+            num_slides: parseInt(form.slides.value),
+            theme: form.theme.value,
+            csrf_token: form.csrf_token.value
+        };
 
-    if (form) {
-        form.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            errorMessage.classList.add('hidden');
-            downloadSection.classList.add('hidden');
-            generateBtn.disabled = true;
-            loadingSpinner.classList.remove('hidden');
-            
-            try {
-                const formData = {
-                    topic: document.getElementById('topic').value,
-                    num_slides: parseInt(document.getElementById('slides').value),
-                    theme: document.getElementById('theme').value,
-                    csrf_token: document.querySelector('input[name="csrf_token"]').value
-                };
-                
-                console.log('Sending data:', formData);
-
-                const response = await fetch('/generate', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': formData.csrf_token
-                    },
-                    body: JSON.stringify(formData),
-                    credentials: 'same-origin'
-                });
-                
-                console.log('Response status:', response.status);
-                const data = await response.json();
-                console.log('Response data:', data);
-                
-                if (data.success) {
-                    downloadSection.classList.remove('hidden');
-                    downloadLink.href = data.download_url;
-                } else {
-                    errorMessage.textContent = data.error || 'Failed to generate presentation';
-                    errorMessage.classList.remove('hidden');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                errorMessage.textContent = 'An error occurred while generating the presentation';
-                errorMessage.classList.remove('hidden');
-            } finally {
-                generateBtn.disabled = false;
-                loadingSpinner.classList.add('hidden');
-            }
+        const response = await fetch('/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': form.csrf_token.value
+            },
+            body: JSON.stringify(formData)
         });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to generate presentation');
+        }
+
+        // Show success message
+        successMessage.textContent = data.message;
+        successMessage.style.display = 'block';
+        
+        // If there's a download URL, create a download link
+        if (data.download_url) {
+            const downloadLink = document.createElement('a');
+            downloadLink.href = data.download_url;
+            downloadLink.textContent = 'Download Presentation';
+            downloadLink.className = 'btn btn-success mt-2';
+            successMessage.appendChild(downloadLink);
+        }
+
+    } catch (error) {
+        console.error('Error:', error);
+        errorMessage.textContent = error.message;
+        errorMessage.style.display = 'block';
+    } finally {
+        // Reset UI state
+        submitButton.disabled = false;
+        loadingSpinner.style.display = 'none';
     }
-});
+}
+
+// Attach submit handler to form
+document.getElementById('presentationForm').onsubmit = handleSubmit;
 </script>
 {% endblock %}
