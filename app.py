@@ -59,7 +59,8 @@ google_bp = make_google_blueprint(
     client_id=os.getenv('GOOGLE_CLIENT_ID'),
     client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
     scope=['https://www.googleapis.com/auth/userinfo.email',
-           'https://www.googleapis.com/auth/userinfo.profile'],
+           'https://www.googleapis.com/auth/userinfo.profile',
+           'openid'],
     redirect_to='index'
 )
 app.register_blueprint(google_bp, url_prefix='/login')
@@ -128,50 +129,62 @@ def google_logged_in(blueprint, token):
             flash("Failed to log in with Google.", category="error")
             return False
 
-        resp = blueprint.session.get("https://www.googleapis.com/oauth2/v2/userinfo")
-        if not resp.ok:
-            app.logger.error(f"Failed to get user info from Google: {resp.text}")
-            flash("Failed to fetch user info from Google.", category="error")
-            return False
-
-        google_info = resp.json()
-        google_user_id = str(google_info["id"])
-
-        # Find this OAuth token in the database, or create it
-        query = OAuth.query.filter_by(
-            provider=blueprint.name,
-            provider_user_id=google_user_id,
-        )
         try:
-            oauth = query.one()
-        except NoResultFound:
-            oauth = OAuth(
+            resp = blueprint.session.get("https://www.googleapis.com/oauth2/v2/userinfo")
+            if not resp.ok:
+                app.logger.error(f"Failed to get user info from Google: {resp.text}")
+                flash("Failed to fetch user info from Google.", category="error")
+                return False
+
+            google_info = resp.json()
+            app.logger.info(f"Received user info from Google: {google_info}")
+            
+            if 'id' not in google_info:
+                app.logger.error("No user ID in Google response")
+                flash("Failed to get user ID from Google.", category="error")
+                return False
+
+            google_user_id = str(google_info["id"])
+
+            # Find this OAuth token in the database, or create it
+            query = OAuth.query.filter_by(
                 provider=blueprint.name,
                 provider_user_id=google_user_id,
-                token=token,
             )
+            try:
+                oauth = query.one()
+            except NoResultFound:
+                oauth = OAuth(
+                    provider=blueprint.name,
+                    provider_user_id=google_user_id,
+                    token=token,
+                )
 
-        if oauth.user:
-            login_user(oauth.user)
-            flash("Successfully signed in with Google.")
-        else:
-            # Create a new local user account for this user
-            user = User(
-                email=google_info["email"],
-                name=google_info.get("name", ""),  # Make name optional
-                google_id=google_user_id,
-            )
-            # Associate the new local user account with the OAuth token
-            oauth.user = user
-            # Save and commit our database models
-            db.session.add_all([user, oauth])
-            db.session.commit()
-            # Log in the new local user account
-            login_user(user)
-            flash("Successfully signed in with Google.")
+            if oauth.user:
+                login_user(oauth.user)
+                flash("Successfully signed in with Google.")
+            else:
+                # Create a new local user account for this user
+                user = User(
+                    email=google_info.get("email", ""),
+                    name=google_info.get("name", ""),
+                    google_id=google_user_id,
+                )
+                # Associate the new local user account with the OAuth token
+                oauth.user = user
+                # Save and commit our database models
+                db.session.add_all([user, oauth])
+                db.session.commit()
+                # Log in the new local user account
+                login_user(user)
+                flash("Successfully signed in with Google.")
 
-        # Disable Flask-Dance's default behavior for saving the OAuth token
-        return False
+            return False
+
+        except Exception as e:
+            app.logger.error(f"Error in Google OAuth callback: {str(e)}")
+            flash("An error occurred during Google sign-in. Please try again.", category="error")
+            return False
 
     except Exception as e:
         app.logger.error(f"Error in Google OAuth callback: {str(e)}")
