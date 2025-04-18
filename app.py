@@ -103,42 +103,68 @@ class OAuth(db.Model):
     google_id = db.Column(db.String(256), unique=True)
 
     def set_token(self, token):
+        app.logger.debug(f"Token type: {type(token)}")
+        app.logger.debug(f"Token content: {token}")
+        app.logger.debug(f"Token dir: {dir(token)}")
+        
         # Convert token to dictionary if it's not already
         if not isinstance(token, dict):
-            token = {
-                'access_token': getattr(token, 'access_token', None),
-                'token_type': getattr(token, 'token_type', None),
-                'scope': getattr(token, 'scope', []),
-                'expires_in': getattr(token, 'expires_in', None),
-                'expires_at': getattr(token, 'expires_at', None),
-                'id_token': getattr(token, 'id_token', None)
+            try:
+                if hasattr(token, 'token'):
+                    # Handle Flask-Dance token object
+                    token = token.token
+                token = {
+                    'access_token': getattr(token, 'access_token', None),
+                    'token_type': getattr(token, 'token_type', None),
+                    'scope': getattr(token, 'scope', []),
+                    'expires_in': getattr(token, 'expires_in', None),
+                    'expires_at': getattr(token, 'expires_at', None),
+                    'id_token': getattr(token, 'id_token', None)
+                }
+            except Exception as e:
+                app.logger.error(f"Error converting token to dictionary: {str(e)}")
+                token = {}
+        
+        app.logger.debug(f"Token after conversion: {token}")
+        
+        try:
+            # Clean up the token dictionary
+            token_dict = {
+                'access_token': str(token.get('access_token', '')),
+                'token_type': str(token.get('token_type', '')),
+                'scope': token.get('scope', []),
+                'expires_in': int(token.get('expires_in', 0)),
+                'expires_at': float(token.get('expires_at', 0)),
+                'id_token': str(token.get('id_token', ''))
             }
-        
-        # Clean up the token dictionary
-        token_dict = {
-            'access_token': str(token.get('access_token', '')),
-            'token_type': str(token.get('token_type', '')),
-            'scope': token.get('scope', []),
-            'expires_in': int(token.get('expires_in', 0)),
-            'expires_at': float(token.get('expires_at', 0)),
-            'id_token': str(token.get('id_token', ''))
-        }
-        
-        # Convert scope to string if it's a list
-        if isinstance(token_dict['scope'], list):
-            token_dict['scope'] = ' '.join(token_dict['scope'])
             
-        self.token = json.dumps(token_dict)
+            # Convert scope to string if it's a list
+            if isinstance(token_dict['scope'], list):
+                token_dict['scope'] = ' '.join(token_dict['scope'])
+            
+            app.logger.debug(f"Final token_dict: {token_dict}")
+            json_token = json.dumps(token_dict)
+            app.logger.debug(f"JSON token: {json_token}")
+            self.token = json_token
+            
+        except Exception as e:
+            app.logger.error(f"Error in token serialization: {str(e)}")
+            self.token = json.dumps({})
 
     def get_token(self):
         try:
+            app.logger.debug(f"Stored token: {self.token}")
             token_dict = json.loads(self.token)
+            app.logger.debug(f"Loaded token dict: {token_dict}")
             # Convert scope back to list if it was stored as a string
             if isinstance(token_dict.get('scope'), str):
                 token_dict['scope'] = token_dict['scope'].split()
             return token_dict
-        except json.JSONDecodeError:
-            app.logger.error("Failed to decode token JSON")
+        except json.JSONDecodeError as e:
+            app.logger.error(f"Failed to decode token JSON: {str(e)}")
+            return {}
+        except Exception as e:
+            app.logger.error(f"Unexpected error in get_token: {str(e)}")
             return {}
 
 class Presentation(db.Model):
