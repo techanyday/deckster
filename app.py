@@ -393,20 +393,38 @@ def generate_presentation():
         
         app.logger.info(f"Saving presentation to: {filepath}")
         
-        # Create a new PowerPoint presentation
-        prs = Presentation()
-        
-        # Add a title slide
-        title_slide_layout = prs.slide_layouts[0]
-        slide = prs.slides.add_slide(title_slide_layout)
-        title = slide.shapes.title
-        subtitle = slide.placeholders[1]
-        
-        title.text = topic
-        subtitle.text = f"Generated for {current_user.name}"
-        
-        # Save the presentation
+        # Try to load template, fallback to blank presentation if needed
+        template_path = os.path.join('static', 'templates', f'{theme}_template.pptx')
         try:
+            if os.path.exists(template_path):
+                app.logger.info(f"Loading template from: {template_path}")
+                prs = Presentation(template_path)
+            else:
+                app.logger.warning(f"Template not found at {template_path}, creating blank presentation")
+                prs = Presentation()
+            
+            # Log presentation attributes for debugging
+            app.logger.debug("Presentation object created successfully")
+            app.logger.debug(f"Available attributes: {dir(prs)}")
+            app.logger.debug(f"Number of slides: {len(prs.slides)}")
+            app.logger.debug(f"Number of slide masters: {len(prs.slide_masters)}")
+            if hasattr(prs, 'slide_layouts'):
+                app.logger.debug(f"Number of slide layouts: {len(prs.slide_layouts)}")
+            
+            # Verify slide layouts are available
+            if not hasattr(prs, 'slide_layouts') or len(prs.slide_layouts) == 0:
+                raise AttributeError("Presentation has no slide layouts available")
+            
+            # Add a title slide
+            title_slide_layout = prs.slide_layouts[0]
+            slide = prs.slides.add_slide(title_slide_layout)
+            title = slide.shapes.title
+            subtitle = slide.placeholders[1]
+            
+            title.text = topic
+            subtitle.text = f"Generated for {current_user.name}"
+            
+            # Save the presentation
             prs.save(filepath)
             app.logger.info("Presentation saved successfully")
             
@@ -421,8 +439,35 @@ def generate_presentation():
             })
             
         except Exception as e:
-            app.logger.error(f"Error saving presentation: {str(e)}")
-            return jsonify({"success": False, "error": f"Error saving presentation: {str(e)}"}), 500
+            error_msg = str(e)
+            if "slide_layouts" in error_msg:
+                error_msg = "Template file missing or corrupt. Using default template."
+                app.logger.error(f"Template error: {str(e)}")
+                # Try again with blank presentation
+                try:
+                    prs = Presentation()
+                    title_slide_layout = prs.slide_layouts[0]
+                    slide = prs.slides.add_slide(title_slide_layout)
+                    title = slide.shapes.title
+                    subtitle = slide.placeholders[1]
+                    
+                    title.text = topic
+                    subtitle.text = f"Generated for {current_user.name}"
+                    
+                    prs.save(filepath)
+                    download_url = url_for('serve_presentation', filename=filename)
+                    
+                    return jsonify({
+                        "success": True,
+                        "message": "Presentation generated with default template",
+                        "download_url": download_url
+                    })
+                except Exception as e2:
+                    app.logger.error(f"Error with fallback template: {str(e2)}")
+                    return jsonify({"success": False, "error": "Could not generate presentation with default template"}), 500
+            
+            app.logger.error(f"Error saving presentation: {error_msg}")
+            return jsonify({"success": False, "error": error_msg}), 500
             
     except Exception as e:
         app.logger.error(f"Error generating presentation: {str(e)}")
