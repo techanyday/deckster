@@ -103,10 +103,22 @@ class OAuth(db.Model):
     google_id = db.Column(db.String(256), unique=True)
 
     def set_token(self, token):
-        self.token = json.dumps(token)
+        token_dict = {
+            'access_token': token.get('access_token'),
+            'token_type': token.get('token_type'),
+            'scope': token.get('scope', []),
+            'expires_in': token.get('expires_in'),
+            'expires_at': token.get('expires_at'),
+            'id_token': token.get('id_token')
+        }
+        self.token = json.dumps(token_dict)
 
     def get_token(self):
-        return json.loads(self.token)
+        token_dict = json.loads(self.token)
+        # Convert scope back to list if it was stored as a string
+        if isinstance(token_dict.get('scope'), str):
+            token_dict['scope'] = token_dict['scope'].split(' ')
+        return token_dict
 
 class Presentation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
