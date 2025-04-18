@@ -266,6 +266,7 @@ def resend_verification():
 def generate_presentation():
     app.logger.info('Generate presentation request received')
     try:
+        # Get JSON data
         data = request.get_json()
         app.logger.debug(f'Received data: {data}')
 
@@ -275,12 +276,20 @@ def generate_presentation():
 
         # Validate CSRF token
         token = data.get('csrf_token')
-        if not token or not csrf.validate_csrf(token):
-            app.logger.error('CSRF validation failed')
+        if not token:
+            app.logger.error('No CSRF token in request')
+            return jsonify({'success': False, 'error': 'CSRF token missing'}), 400
+
+        try:
+            csrf.validate_csrf(token)
+            app.logger.debug('CSRF validation passed')
+        except Exception as e:
+            app.logger.error(f'CSRF validation failed: {str(e)}')
             return jsonify({'success': False, 'error': 'Invalid CSRF token'}), 400
 
+        # Get form data
         topic = data.get('topic')
-        num_slides = data.get('num_slides', 5)
+        num_slides = int(data.get('num_slides', 5))
         theme = data.get('theme', 'professional')
 
         if not topic:
@@ -289,8 +298,8 @@ def generate_presentation():
 
         app.logger.info(f'Generating presentation: topic={topic}, slides={num_slides}, theme={theme}')
 
-        # TODO: Add your presentation generation logic here
-        # For now, let's return a mock response
+        # TODO: Add actual presentation generation logic here
+        # For now, return mock response
         presentation_data = {
             'title': topic,
             'slides': num_slides,
@@ -308,7 +317,8 @@ def generate_presentation():
         return jsonify({
             'success': True,
             'message': 'Presentation generated successfully',
-            'download_url': '/download/presentation.pptx'
+            'download_url': '/download/presentation.pptx',
+            'presentation': presentation_data
         })
 
     except Exception as e:
