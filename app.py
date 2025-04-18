@@ -346,50 +346,68 @@ def serve_presentation(filename):
         return jsonify({'error': 'File not found'}), 404
 
 def create_blank_presentation():
-    """Create a blank presentation with basic slide layouts initialized"""
-    app.logger.debug("Creating blank presentation with default layouts")
+    """Create a blank presentation with minimal required elements"""
+    app.logger.debug("Creating minimal blank presentation")
     try:
-        # First try to use the default template that comes with python-pptx
-        try:
-            from pptx.parts.presentation import _default_pptx_path
-            app.logger.debug(f"Using python-pptx default template from: {_default_pptx_path}")
-            prs = Presentation(_default_pptx_path)
-        except Exception as e:
-            app.logger.warning(f"Could not load default template: {str(e)}, creating empty presentation")
-            prs = Presentation()
+        # Create new presentation without template
+        prs = Presentation()
         
-        # Log presentation object type and module
+        # Log initial state
         app.logger.debug(f"Presentation object type: {type(prs).__name__}")
         app.logger.debug(f"Presentation module: {prs.__class__.__module__}")
         
-        # Verify core attributes
-        if not hasattr(prs, 'slide_masters'):
-            raise ValueError("Invalid presentation: missing slide_masters")
-        if not hasattr(prs, 'slide_layouts'):
-            raise ValueError("Invalid presentation: missing slide_layouts")
-        if not hasattr(prs, 'slides'):
-            raise ValueError("Invalid presentation: missing slides")
+        # Create a slide master if none exists
+        if not hasattr(prs, 'slide_masters') or len(prs.slide_masters) == 0:
+            app.logger.info("Creating new slide master")
+            slide_master = prs.slide_master
             
+            # Create slide layouts if none exist
+            if not hasattr(prs, 'slide_layouts') or len(prs.slide_layouts) == 0:
+                app.logger.info("Creating basic slide layouts")
+                # Add title layout
+                title_layout = slide_master.add_slide_layout()
+                title_layout.name = 'Title Slide'
+                
+                # Add title placeholder
+                title_placeholder = title_layout.shapes.add_placeholder(
+                    msoplacement=1,  # Title
+                    left=Inches(1),
+                    top=Inches(1),
+                    width=Inches(8),
+                    height=Inches(1.5)
+                )
+                
+                # Add subtitle placeholder
+                subtitle_placeholder = title_layout.shapes.add_placeholder(
+                    msoplacement=2,  # Subtitle
+                    left=Inches(1),
+                    top=Inches(3),
+                    width=Inches(8),
+                    height=Inches(1)
+                )
+        
+        # Verify we have slides collection
+        if not hasattr(prs, 'slides'):
+            app.logger.error("Presentation missing slides collection")
+            raise ValueError("Invalid presentation: missing slides collection")
+        
         # Log presentation structure
         app.logger.debug(f"Slide masters: {len(prs.slide_masters)}")
-        app.logger.debug(f"Available layouts: {[layout.name for layout in prs.slide_layouts]}")
+        app.logger.debug(f"Slide layouts: {len(prs.slide_layouts)}")
         app.logger.debug(f"Initial slides: {len(prs.slides)}")
         
-        # Create a title slide to verify functionality
+        # Create initial slide
         title_layout = prs.slide_layouts[0]
-        app.logger.debug(f"Using layout: {title_layout.name}")
-        
         slide = prs.slides.add_slide(title_layout)
-        app.logger.debug(f"Slide created, total slides: {len(prs.slides)}")
         
-        # Verify slide was created with expected placeholders
-        placeholders = {shape.placeholder_format.type: shape.name for shape in slide.placeholders}
-        app.logger.debug(f"Slide placeholders: {placeholders}")
+        # Verify slide creation
+        app.logger.debug(f"Slides after creation: {len(prs.slides)}")
+        app.logger.debug(f"Shapes in slide: {len(slide.shapes)}")
         
         return prs
         
     except Exception as e:
-        app.logger.error(f"Error creating blank presentation: {str(e)}")
+        app.logger.error(f"Error creating presentation: {str(e)}")
         raise ValueError(f"Failed to create presentation: {str(e)}")
 
 @app.route('/generate', methods=['POST'])
@@ -442,58 +460,32 @@ def generate_presentation():
         
         # Create presentation
         try:
-            # Try to use theme template first
-            template_path = os.path.join('static', 'templates', f'{theme}_template.pptx')
-            if os.path.exists(template_path):
-                app.logger.info(f"Loading template from: {template_path}")
-                prs = Presentation(template_path)
-                # Verify template is valid
-                if not hasattr(prs, 'slide_layouts') or len(prs.slide_layouts) == 0:
-                    app.logger.warning("Template invalid, creating blank presentation")
-                    prs = create_blank_presentation()
-            else:
-                app.logger.info("No theme template found, creating blank presentation")
-                prs = create_blank_presentation()
+            # Create blank presentation first
+            prs = create_blank_presentation()
             
-            # Add title slide content
+            # Add content to first slide
             slide = prs.slides[0]
             
-            # Find title and subtitle placeholders
-            title = None
-            subtitle = None
+            # Create text boxes for title and subtitle
+            title_box = slide.shapes.add_textbox(
+                left=Inches(1),
+                top=Inches(1),
+                width=Inches(8),
+                height=Inches(1.5)
+            )
+            title_box.text_frame.text = topic
+            title_box.text_frame.paragraphs[0].font.size = Pt(44)
+            title_box.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             
-            for shape in slide.placeholders:
-                if shape.placeholder_format.type == 1:  # Title
-                    title = shape.text_frame
-                elif shape.placeholder_format.type == 2:  # Subtitle
-                    subtitle = shape.text_frame
-            
-            # Add text to placeholders or create new shapes if needed
-            if title:
-                title.text = topic
-            else:
-                app.logger.warning("No title placeholder found, adding text box")
-                left = Inches(1)
-                top = Inches(1)
-                width = Inches(8)
-                height = Inches(1.5)
-                title_box = slide.shapes.add_textbox(left, top, width, height)
-                title_box.text_frame.text = topic
-                title_box.text_frame.paragraphs[0].font.size = Pt(44)
-                title_box.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
-            
-            if subtitle:
-                subtitle.text = f"Generated for {current_user.name}"
-            else:
-                app.logger.warning("No subtitle placeholder found, adding text box")
-                left = Inches(1)
-                top = Inches(3)
-                width = Inches(8)
-                height = Inches(1)
-                subtitle_box = slide.shapes.add_textbox(left, top, width, height)
-                subtitle_box.text_frame.text = f"Generated for {current_user.name}"
-                subtitle_box.text_frame.paragraphs[0].font.size = Pt(24)
-                subtitle_box.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+            subtitle_box = slide.shapes.add_textbox(
+                left=Inches(1),
+                top=Inches(3),
+                width=Inches(8),
+                height=Inches(1)
+            )
+            subtitle_box.text_frame.text = f"Generated for {current_user.name}"
+            subtitle_box.text_frame.paragraphs[0].font.size = Pt(24)
+            subtitle_box.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             
             # Save the presentation
             prs.save(filepath)
