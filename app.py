@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
 import os
+import json
 from dotenv import load_dotenv
 import logging
 from utils.utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
@@ -13,7 +14,6 @@ import requests
 from PIL import Image
 from io import BytesIO
 import openai
-import json
 from flask_dance.contrib.google import make_google_blueprint, google
 from flask_dance.consumer.storage.sqla import OAuthConsumerMixin, SQLAlchemyStorage
 from flask_dance.consumer import oauth_authorized
@@ -102,6 +102,12 @@ class OAuth(db.Model):
     user = db.relationship(User)
     google_id = db.Column(db.String(256), unique=True)
 
+    def set_token(self, token):
+        self.token = json.dumps(token)
+
+    def get_token(self):
+        return json.loads(self.token)
+
 class Presentation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
@@ -159,12 +165,14 @@ def google_logged_in(blueprint, token):
         )
         try:
             oauth = query.one()
+            # Update the token
+            oauth.set_token(token)
         except NoResultFound:
             oauth = OAuth(
                 provider=blueprint.name,
                 google_id=google_user_id,
-                token=token,
             )
+            oauth.set_token(token)
 
         if oauth.user:
             app.logger.debug(f"Found existing user: {oauth.user}")
