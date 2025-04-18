@@ -4,14 +4,9 @@ from dotenv import load_dotenv
 import logging
 from utils.utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
 from flask_wtf.csrf import CSRFProtect
-from itsdangerous import URLSafeTimedSerializer
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timedelta
+from datetime import datetime
 from flask_cors import CORS
 import tempfile
 import requests
@@ -19,6 +14,10 @@ from PIL import Image
 from io import BytesIO
 import openai
 import json
+from flask_dance.contrib.google import make_google_blueprint, google
+from flask_dance.consumer.storage.sqla import OAuthConsumerMixin, SQLAlchemyStorage
+from flask_dance.consumer import oauth_authorized
+from sqlalchemy.orm.exc import NoResultFound
 
 # Load environment variables
 load_dotenv()
@@ -44,40 +43,34 @@ app.config.update(
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SECRET_KEY=os.getenv('SECRET_KEY', 'dev-secret-key-123'),
     WTF_CSRF_ENABLED=True,
-    MAIL_SERVER=os.getenv('MAIL_SERVER', 'smtp.gmail.com'),
-    MAIL_PORT=int(os.getenv('MAIL_PORT', '587')),
-    MAIL_USE_TLS=os.getenv('MAIL_USE_TLS', 'True').lower() == 'true',
-    MAIL_USERNAME=os.getenv('MAIL_USERNAME'),
-    MAIL_PASSWORD=os.getenv('MAIL_PASSWORD'),
-    MAIL_DEFAULT_SENDER=os.getenv('MAIL_DEFAULT_SENDER')
 )
 
 # Initialize extensions
 db = SQLAlchemy(app)
 csrf = CSRFProtect(app)
-ts = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
 # Initialize login manager
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login'
+login_manager.login_view = 'google.login'
+
+# Configure Google OAuth
+google_bp = make_google_blueprint(
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+    scope=['profile', 'email'],
+    redirect_to='index'
+)
+app.register_blueprint(google_bp, url_prefix='/login')
 
 # Import models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128))
+    name = db.Column(db.String(120))
     subscription_type = db.Column(db.String(20), default='free')
     presentations = db.relationship('Presentation', backref='user', lazy=True)
-    email_verified = db.Column(db.Boolean, default=False)
-    verification_token = db.Column(db.String(100), unique=True)
-    token_expiry = db.Column(db.DateTime)
-
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
+    google_id = db.Column(db.String(256), unique=True)
 
     def get_id(self):
         return str(self.id)
@@ -94,10 +87,9 @@ class User(db.Model):
     def is_anonymous(self):
         return False
 
-    def generate_verification_token(self):
-        self.verification_token = ts.dumps(self.email, salt='email-verification-salt')
-        self.token_expiry = datetime.utcnow() + timedelta(hours=24)
-        return self.verification_token
+class OAuth(OAuthConsumerMixin, db.Model):
+    user_id = db.Column(db.Integer, db.ForeignKey(User.id))
+    user = db.relationship(User)
 
 class Presentation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -124,289 +116,94 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 
 CORS(app)
 
-def verify_paystack_transaction(reference):
-    """Verify Paystack transaction."""
-    url = f"https://api.paystack.co/transaction/verify/{reference}"
-    headers = {
-        "Authorization": f"Bearer {app.config['PAYSTACK_SECRET_KEY']}",
-        "Content-Type": "application/json"
-    }
-    response = requests.get(url, headers=headers)
-    return response.json()
+# Configure OAuth storage
+google_bp.storage = SQLAlchemyStorage(OAuth, db.session, user=current_user)
 
-def generate_image(prompt):
-    """Generate an image using DALL-E 3."""
-    try:
-        # Generate image with DALL-E 3
-        response = openai.Image.create(
-            model="dall-e-3",
-            prompt=f"Create a professional, presentation-style image for: {prompt}. Make it suitable for a business presentation, with clean and modern aesthetics.",
-            n=1,
-            size="1792x1024",
-            quality="standard"
-        )
-        
-        # Get the image URL
-        image_url = response.data[0].url
-        
-        # Download the image
-        image_response = requests.get(image_url)
-        image_response.raise_for_status()
-        
-        # Open and process the image
-        image = Image.open(BytesIO(image_response.content))
-        
-        # Create a temporary file for the image
-        temp_image = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-        image.save(temp_image.name, 'PNG')
-        
-        return temp_image.name
-    except Exception as e:
-        app.logger.error(f"Error generating image: {str(e)}")
-        return None
-
-def extract_image_prompt(content):
-    """Extract a relevant image prompt from slide content."""
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert at creating image generation prompts. Create a clear, specific prompt that will generate a relevant image for a presentation slide. Focus on visual elements and keep the prompt concise."},
-                {"role": "user", "content": f"Create an image generation prompt for this slide content: {content}"}
-            ],
-            temperature=0.7
-        )
-        return response.choices[0].message['content'].strip()
-    except Exception as e:
-        app.logger.error(f"Error creating image prompt: {str(e)}")
-        return None
-
-def extract_slide_keywords(content):
-    """Extract relevant keywords from slide content for image search."""
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert at extracting relevant image search keywords from presentation content. Return only the keywords, no other text."},
-                {"role": "user", "content": f"Extract 1-2 most relevant keywords for an image search from this slide content, focusing on concrete visual concepts: {content}"}
-            ],
-            temperature=0.3
-        )
-        return response.choices[0].message['content'].strip()
-    except Exception as e:
-        app.logger.error(f"Error extracting keywords: {str(e)}")
-        return None
-
-def send_password_reset_email(user_email, reset_url):
-    """Send password reset email to user."""
-    try:
-        msg = MIMEMultipart()
-        msg['Subject'] = 'Password Reset Request'
-        msg['From'] = app.config['MAIL_DEFAULT_SENDER']
-        msg['To'] = user_email
-
-        html = f"""
-        <h3>Password Reset Request</h3>
-        <p>To reset your password, please click the link below:</p>
-        <p><a href="{reset_url}">Reset Password</a></p>
-        <p>If you did not request a password reset, please ignore this email.</p>
-        <p>This link will expire in 1 hour.</p>
-        """
-
-        msg.attach(MIMEText(html, 'html'))
-
-        with smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT']) as server:
-            if app.config['MAIL_USE_TLS']:
-                server.starttls()
-            if app.config['MAIL_USERNAME'] and app.config['MAIL_PASSWORD']:
-                server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
-            server.send_message(msg)
-            
-        return True
-    except Exception as e:
-        app.logger.error(f"Error sending password reset email: {str(e)}")
+@oauth_authorized.connect_via(google_bp)
+def google_logged_in(blueprint, token):
+    if not token:
+        flash("Failed to log in with Google.", category="error")
         return False
 
-def send_verification_email(user_email, verification_url):
-    """Send verification email to user."""
-    try:
-        msg = MIMEMultipart()
-        msg['Subject'] = 'Verify Your Email - Windsurf'
-        msg['From'] = app.config['MAIL_DEFAULT_SENDER']
-        msg['To'] = user_email
-
-        # Render the email template
-        html = render_template('email/verify_email.html', verification_url=verification_url)
-        msg.attach(MIMEText(html, 'html'))
-
-        with smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT']) as server:
-            if app.config['MAIL_USE_TLS']:
-                server.starttls()
-            if app.config['MAIL_USERNAME'] and app.config['MAIL_PASSWORD']:
-                server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
-            server.send_message(msg)
-            
-        return True
-    except Exception as e:
-        app.logger.error(f"Error sending verification email: {str(e)}")
+    resp = blueprint.session.get("/oauth2/v1/userinfo")
+    if not resp.ok:
+        flash("Failed to fetch user info from Google.", category="error")
         return False
+
+    google_info = resp.json()
+    google_user_id = str(google_info["id"])
+
+    # Find this OAuth token in the database, or create it
+    query = OAuth.query.filter_by(
+        provider=blueprint.name,
+        provider_user_id=google_user_id,
+    )
+    try:
+        oauth = query.one()
+    except NoResultFound:
+        oauth = OAuth(
+            provider=blueprint.name,
+            provider_user_id=google_user_id,
+            token=token,
+        )
+
+    if oauth.user:
+        login_user(oauth.user)
+        flash("Successfully signed in with Google.")
+
+    else:
+        # Create a new local user account for this user
+        user = User(
+            email=google_info["email"],
+            name=google_info["name"],
+            google_id=google_user_id,
+        )
+        # Associate the new local user account with the OAuth token
+        oauth.user = user
+        # Save and commit our database models
+        db.session.add_all([user, oauth])
+        db.session.commit()
+        # Log in the new local user account
+        login_user(user)
+        flash("Successfully signed in with Google.")
+
+    # Disable Flask-Dance's default behavior for saving the OAuth token
+    return False
 
 @app.route('/')
-@login_required
 def index():
     return render_template('index.html')
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({'status': 'error', 'message': 'No data provided'}), 400
-            
-            email = data.get('email')
-            password = data.get('password')
-            
-            if not email or not password:
-                return jsonify({'status': 'error', 'message': 'Email and password are required'}), 400
-
-            user = User.query.filter_by(email=email).first()
-            if user and user.check_password(password):
-                if not user.email_verified:
-                    return jsonify({
-                        'status': 'error',
-                        'message': 'Please verify your email before logging in.',
-                        'needs_verification': True
-                    }), 401
-                    
-                login_user(user)
-                return jsonify({'status': 'success'})
-            
-            return jsonify({'status': 'error', 'message': 'Invalid email or password'}), 401
-        except Exception as e:
-            app.logger.error(f"Login error: {str(e)}")
-            return jsonify({'status': 'error', 'message': 'An error occurred during login'}), 500
-    
-    return render_template('login.html')
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({'status': 'error', 'message': 'No data provided'}), 400
-            
-            email = data.get('email')
-            password = data.get('password')
-            
-            if not email or not password:
-                return jsonify({'status': 'error', 'message': 'Email and password are required'}), 400
-            
-            # Check if user already exists
-            if User.query.filter_by(email=email).first():
-                return jsonify({'status': 'error', 'message': 'Email already registered'}), 400
-            
-            try:
-                user = User(email=email)
-                user.set_password(password)
-                
-                # Generate verification token
-                token = user.generate_verification_token()
-                
-                db.session.add(user)
-                db.session.commit()
-                
-                # Send verification email
-                verification_url = url_for('verify_email', token=token, _external=True)
-                if send_verification_email(user.email, verification_url):
-                    return jsonify({
-                        'status': 'success',
-                        'message': 'Registration successful! Please check your email to verify your account.'
-                    })
-                else:
-                    return jsonify({
-                        'status': 'error',
-                        'message': 'Registration successful but failed to send verification email. Please contact support.'
-                    }), 500
-                    
-            except Exception as e:
-                db.session.rollback()
-                app.logger.error(f"Database error during registration: {str(e)}")
-                return jsonify({'status': 'error', 'message': 'Error creating user account'}), 500
-                
-        except Exception as e:
-            app.logger.error(f"Registration error: {str(e)}")
-            return jsonify({'status': 'error', 'message': 'An error occurred during registration'}), 500
-            
-    return render_template('register.html')
-
-@app.route('/verify-email/<token>')
-def verify_email(token):
-    try:
-        email = ts.loads(token, salt='email-verification-salt', max_age=86400)  # 24 hours
-        user = User.query.filter_by(email=email).first()
-        
-        if not user:
-            flash('Invalid verification link.', 'error')
-            return redirect(url_for('login'))
-            
-        if user.email_verified:
-            flash('Email already verified. Please login.', 'info')
-            return redirect(url_for('login'))
-            
-        if user.verification_token != token or user.token_expiry < datetime.utcnow():
-            flash('Verification link has expired. Please request a new one.', 'error')
-            return redirect(url_for('login'))
-            
-        user.email_verified = True
-        user.verification_token = None
-        user.token_expiry = None
-        db.session.commit()
-        
-        flash('Email verified successfully! You can now login.', 'success')
-        return redirect(url_for('login'))
-        
-    except Exception as e:
-        app.logger.error(f"Email verification error: {str(e)}")
-        flash('Invalid or expired verification link.', 'error')
-        return redirect(url_for('login'))
-
-@app.route('/resend-verification', methods=['POST'])
-def resend_verification():
-    try:
-        data = request.get_json()
-        if not data or not data.get('email'):
-            return jsonify({'status': 'error', 'message': 'Email is required'}), 400
-            
-        user = User.query.filter_by(email=data['email']).first()
-        if not user:
-            # Don't reveal that the user doesn't exist
-            return jsonify({'status': 'success', 'message': 'If your email exists, you will receive a verification link shortly.'}), 200
-            
-        if user.email_verified:
-            return jsonify({'status': 'error', 'message': 'Email is already verified'}), 400
-            
-        # Generate new verification token
-        token = user.generate_verification_token()
-        db.session.commit()
-        
-        # Send verification email
-        verification_url = url_for('verify_email', token=token, _external=True)
-        if send_verification_email(user.email, verification_url):
-            return jsonify({'status': 'success', 'message': 'Verification email sent successfully'}), 200
-        else:
-            return jsonify({'status': 'error', 'message': 'Failed to send verification email'}), 500
-            
-    except Exception as e:
-        app.logger.error(f"Resend verification error: {str(e)}")
-        return jsonify({'status': 'error', 'message': 'An error occurred'}), 500
 
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for('login'))
+    return redirect(url_for('index'))
+
+@app.route('/login')
+def login():
+    return redirect(url_for('google.login'))
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    return jsonify({
+        'status': 'error',
+        'message': 'Registration is not available. Please use Google to sign in.'
+    }), 400
+
+@app.route('/verify-email/<token>')
+def verify_email(token):
+    return jsonify({
+        'status': 'error',
+        'message': 'Email verification is not available. Please use Google to sign in.'
+    }), 400
+
+@app.route('/resend-verification', methods=['POST'])
+def resend_verification():
+    return jsonify({
+        'status': 'error',
+        'message': 'Email verification is not available. Please use Google to sign in.'
+    }), 400
 
 @app.route('/generate', methods=['POST'])
 @login_required
@@ -614,64 +411,17 @@ def download_presentation(filename):
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            if not data or not data.get('email'):
-                return jsonify({'status': 'error', 'message': 'Email is required'}), 400
-            
-            email = data.get('email')
-            user = User.query.filter_by(email=email).first()
-            
-            if not user:
-                # Don't reveal that the user doesn't exist
-                return jsonify({'status': 'success', 'message': 'If your email exists in our system, you will receive a password reset link shortly.'}), 200
-            
-            # Generate token
-            token = ts.dumps(user.email, salt='password-reset-salt')
-            
-            # Build reset URL
-            reset_url = url_for('reset_password', token=token, _external=True)
-            
-            # Send email
-            if send_password_reset_email(user.email, reset_url):
-                return jsonify({'status': 'success', 'message': 'If your email exists in our system, you will receive a password reset link shortly.'}), 200
-            else:
-                return jsonify({'status': 'error', 'message': 'Failed to send reset email. Please try again later.'}), 500
-                
-        except Exception as e:
-            app.logger.error(f"Password reset request error: {str(e)}")
-            return jsonify({'status': 'error', 'message': 'An error occurred. Please try again later.'}), 500
-            
-    return render_template('forgot_password.html')
+    return jsonify({
+        'status': 'error',
+        'message': 'Password reset is not available. Please use Google to sign in.'
+    }), 400
 
 @app.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
-    try:
-        email = ts.loads(token, salt='password-reset-salt', max_age=3600)  # Token expires in 1 hour
-    except:
-        return render_template('reset_password.html', error='Invalid or expired reset link. Please try again.')
-    
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            if not data or not data.get('password'):
-                return jsonify({'status': 'error', 'message': 'New password is required'}), 400
-            
-            user = User.query.filter_by(email=email).first()
-            if not user:
-                return jsonify({'status': 'error', 'message': 'User not found'}), 404
-            
-            user.set_password(data.get('password'))
-            db.session.commit()
-            
-            return jsonify({'status': 'success', 'message': 'Password has been reset successfully. You can now login with your new password.'}), 200
-            
-        except Exception as e:
-            app.logger.error(f"Password reset error: {str(e)}")
-            return jsonify({'status': 'error', 'message': 'An error occurred while resetting your password'}), 500
-            
-    return render_template('reset_password.html', token=token)
+    return jsonify({
+        'status': 'error',
+        'message': 'Password reset is not available. Please use Google to sign in.'
+    }), 400
 
 if __name__ == '__main__':
     app.run(debug=True)

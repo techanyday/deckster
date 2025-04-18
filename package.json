@@ -1,0 +1,13 @@
+{
+  "name": "windsurf-project",
+  "version": "1.0.0",
+  "description": "A presentation generation application",
+  "main": "index.js",
+  "scripts": {
+    "build:css": "tailwindcss -i ./static/src/main.css -o ./static/css/main.css --minify",
+    "watch:css": "tailwindcss -i ./static/src/main.css -o ./static/css/main.css --watch"
+  },
+  "dependencies": {
+    "tailwindcss": "^3.3.0"
+  }
+}

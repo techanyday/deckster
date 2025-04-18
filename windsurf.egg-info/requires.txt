@@ -1,0 +1,13 @@
+flask
+flask-sqlalchemy
+flask-login
+flask-migrate
+python-dotenv
+requests
+openai
+python-pptx
+Pillow
+gunicorn
+flask_cors
+werkzeug
+psycopg2-binary

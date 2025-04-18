@@ -1,0 +1,9 @@
+README.md
+setup.py
+utils/__init__.py
+utils/utils.py
+windsurf.egg-info/PKG-INFO
+windsurf.egg-info/SOURCES.txt
+windsurf.egg-info/dependency_links.txt
+windsurf.egg-info/requires.txt
+windsurf.egg-info/top_level.txt

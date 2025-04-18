@@ -1,0 +1,12 @@
+setup.py
+app/__init__.py
+app/models.py
+app/routes/__init__.py
+app/routes/auth.py
+app/routes/main.py
+app/routes/presentation.py
+powerpoint_generator.egg-info/PKG-INFO
+powerpoint_generator.egg-info/SOURCES.txt
+powerpoint_generator.egg-info/dependency_links.txt
+powerpoint_generator.egg-info/requires.txt
+powerpoint_generator.egg-info/top_level.txt
