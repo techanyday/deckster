@@ -127,8 +127,10 @@ class Presentation(db.Model):
     error_message = db.Column(db.Text)
 
 def create_app():
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static'))
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
+    app.config['STATIC_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+    app.config['PRESENTATION_FOLDER'] = os.path.join(app.config['STATIC_FOLDER'], 'presentations')
     
     # Configure logging
     logging.basicConfig(level=logging.DEBUG)
@@ -165,6 +167,9 @@ def create_app():
     return app
 
 app = create_app()
+
+# Ensure static folders exist
+os.makedirs(app.config['PRESENTATION_FOLDER'], exist_ok=True)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -263,9 +268,6 @@ def resend_verification():
         'message': 'Email verification is not available. Please use Google to sign in.'
     }), 400
 
-# Ensure static folder exists
-os.makedirs(os.path.join(app.root_path, 'static', 'presentations'), exist_ok=True)
-
 @app.route('/generate', methods=['POST'])
 @login_required
 def generate_presentation():
@@ -326,7 +328,7 @@ def generate_presentation():
             {"title": "Conclusion", "points": ["Summary of key points", "Next steps", "Questions?"]}
         ]
 
-        for content in slide_contents[:num_slides-1]:  # -1 because we already added title slide
+        for content in slide_contents[:num_slides-1]:
             slide = prs.slides.add_slide(bullet_slide_layout)
             title = slide.shapes.title
             body = slide.shapes.placeholders[1]
@@ -340,30 +342,37 @@ def generate_presentation():
                 p.text = point
                 p.level = 0
 
+        # Generate unique filename with timestamp and sanitized topic
+        safe_topic = "".join(c for c in topic if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        timestamp = int(time.time())
+        filename = f"{safe_topic}_{timestamp}.pptx"
+        
         # Save the presentation
-        output_path = os.path.join(app.root_path, 'static', 'presentations')
-        filename = f"presentation_{int(time.time())}.pptx"
-        full_path = os.path.join(output_path, filename)
-        
         try:
+            full_path = os.path.join(app.config['PRESENTATION_FOLDER'], filename)
+            app.logger.info(f'Attempting to save presentation to {full_path}')
             prs.save(full_path)
-            app.logger.info(f'Presentation saved to {full_path}')
+            app.logger.info(f'Successfully saved presentation to {full_path}')
+            
+            # Generate the URL for the file
+            file_url = url_for('static', filename=f'presentations/{filename}')
+            app.logger.info(f'Generated download URL: {file_url}')
+            
+            return jsonify({
+                'success': True,
+                'message': 'Presentation generated successfully',
+                'download_url': file_url,
+                'presentation_data': {
+                    'title': topic,
+                    'slides': num_slides,
+                    'theme': theme,
+                    'content': slide_contents
+                }
+            })
+            
         except Exception as e:
-            app.logger.error(f'Error saving presentation: {str(e)}')
-            return jsonify({'success': False, 'error': 'Failed to save presentation'}), 500
-        
-        # Return success response with download URL
-        return jsonify({
-            'success': True,
-            'message': 'Presentation generated successfully',
-            'download_url': url_for('static', filename=f'presentations/{filename}'),
-            'presentation_data': {
-                'title': topic,
-                'slides': num_slides,
-                'theme': theme,
-                'content': slide_contents
-            }
-        })
+            app.logger.error(f'Error saving presentation: {str(e)}', exc_info=True)
+            return jsonify({'success': False, 'error': 'Failed to save presentation: ' + str(e)}), 500
 
     except Exception as e:
         app.logger.error(f'Error generating presentation: {str(e)}', exc_info=True)
