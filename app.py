@@ -347,20 +347,16 @@ def serve_presentation(filename):
 
 def create_blank_presentation():
     """Create a presentation using the default template"""
-    app.logger.debug("Creating presentation from template")
+    app.logger.debug("Creating presentation with default template")
     try:
-        # Get the default template path from python-pptx
-        from pptx.parts.presentation import _default_pptx_path
-        app.logger.debug(f"Using default template from: {_default_pptx_path}")
-        
-        # Create presentation from default template
-        prs = Presentation(_default_pptx_path)
+        # Create presentation with default template
+        prs = Presentation()
         
         # Log initial state
         app.logger.debug(f"Presentation object type: {type(prs).__name__}")
         app.logger.debug(f"Presentation module: {prs.__class__.__module__}")
         app.logger.debug(f"Slide masters: {len(prs.slide_masters)}")
-        app.logger.debug(f"Slide layouts: {[layout.name for layout in prs.slide_layouts]}")
+        app.logger.debug(f"Available layouts: {[layout.name for layout in prs.slide_layouts]}")
         
         # Use title slide layout (usually the first one)
         title_layout = prs.slide_layouts[0]
@@ -375,6 +371,7 @@ def create_blank_presentation():
         subtitle = None
         
         for shape in slide.placeholders:
+            app.logger.debug(f"Found placeholder: {shape.placeholder_format.type} - {shape.name}")
             if shape.placeholder_format.type == 1:  # Title
                 title = shape
             elif shape.placeholder_format.type == 2:  # Subtitle
