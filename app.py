@@ -93,9 +93,14 @@ class User(db.Model):
     def is_anonymous(self):
         return False
 
-class OAuth(OAuthConsumerMixin, db.Model):
+class OAuth(db.Model):
+    __tablename__ = "flask_dance_oauth"
+    id = db.Column(db.Integer, primary_key=True)
+    provider = db.Column(db.String(50), nullable=False)
+    token = db.Column(db.Text, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey(User.id))
     user = db.relationship(User)
+    google_id = db.Column(db.String(256), unique=True)
 
 class Presentation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -128,83 +133,66 @@ google_bp.storage = SQLAlchemyStorage(OAuth, db.session, user=current_user)
 @oauth_authorized.connect_via(google_bp)
 def google_logged_in(blueprint, token):
     app.logger.debug("OAuth callback started")
+    if not token:
+        app.logger.error("Failed to log in with Google")
+        return False
+
     try:
-        if not token:
-            app.logger.error("No token received from Google")
-            flash("Failed to log in with Google.", category="error")
+        app.logger.debug("Getting user info from Google")
+        resp = blueprint.session.get("/oauth2/v2/userinfo")
+        app.logger.debug(f"Google API response status: {resp.status_code}")
+        app.logger.debug(f"Google API response headers: {resp.headers}")
+        
+        if not resp.ok:
+            app.logger.error(f"Failed to get user info from Google: {resp.text}")
             return False
 
+        google_info = resp.json()
+        app.logger.debug(f"Received user info from Google: {google_info}")
+        google_user_id = google_info["id"]
+        app.logger.debug(f"Processing user with Google ID: {google_user_id}")
+
+        # Find this OAuth token in the database, or create it
+        query = OAuth.query.filter_by(
+            provider=blueprint.name,
+            google_id=google_user_id,
+        )
         try:
-            app.logger.debug("Getting user info from Google")
-            resp = blueprint.session.get("https://www.googleapis.com/oauth2/v2/userinfo")
-            app.logger.debug(f"Google API response status: {resp.status_code}")
-            app.logger.debug(f"Google API response headers: {resp.headers}")
-            
-            if not resp.ok:
-                app.logger.error(f"Failed to get user info from Google: {resp.text}")
-                flash("Failed to fetch user info from Google.", category="error")
-                return False
-
-            google_info = resp.json()
-            app.logger.debug(f"Received user info from Google: {google_info}")
-            
-            if 'id' not in google_info:
-                app.logger.error("No user ID in Google response")
-                flash("Failed to get user ID from Google.", category="error")
-                return False
-
-            google_user_id = str(google_info["id"])
-            app.logger.debug(f"Processing user with Google ID: {google_user_id}")
-
-            # Find this OAuth token in the database, or create it
-            query = OAuth.query.filter_by(
+            oauth = query.one()
+        except NoResultFound:
+            oauth = OAuth(
                 provider=blueprint.name,
-                provider_user_id=google_user_id,
+                google_id=google_user_id,
+                token=token,
             )
-            try:
-                oauth = query.one()
-                app.logger.debug("Found existing OAuth token")
-            except NoResultFound:
-                app.logger.debug("Creating new OAuth token")
-                oauth = OAuth(
-                    provider=blueprint.name,
-                    provider_user_id=google_user_id,
-                    token=token,
-                )
 
-            if oauth.user:
-                app.logger.debug("Logging in existing user")
-                login_user(oauth.user)
-                flash("Successfully signed in with Google.")
-            else:
-                app.logger.debug("Creating new user")
-                # Create a new local user account for this user
-                user = User(
-                    email=google_info.get("email", ""),
-                    name=google_info.get("name", ""),
-                    google_id=google_user_id,
-                )
-                # Associate the new local user account with the OAuth token
-                oauth.user = user
-                # Save and commit our database models
-                db.session.add_all([user, oauth])
-                db.session.commit()
-                app.logger.debug("New user created and saved")
-                # Log in the new local user account
-                login_user(user)
-                flash("Successfully signed in with Google.")
+        if oauth.user:
+            app.logger.debug(f"Found existing user: {oauth.user}")
+            login_user(oauth.user)
+            flash("Successfully signed in with Google.", "success")
 
-            app.logger.debug("OAuth callback completed successfully")
-            return False
+        else:
+            # Create a new local user account for this user
+            user = User(
+                email=google_info["email"],
+                name=google_info.get("name", ""),
+                google_id=google_user_id,
+            )
+            # Associate the new local user account with the OAuth token
+            oauth.user = user
+            # Save and commit our database models
+            db.session.add_all([user, oauth])
+            db.session.commit()
+            # Log in the new local user account
+            login_user(user)
+            flash("Successfully signed in with Google.", "success")
 
-        except Exception as e:
-            app.logger.error(f"Error in Google API request: {str(e)}", exc_info=True)
-            flash("An error occurred during Google sign-in. Please try again.", category="error")
-            return False
+        # Disable Flask-Dance's default behavior for saving the OAuth token
+        return False
 
     except Exception as e:
-        app.logger.error(f"Error in OAuth callback: {str(e)}", exc_info=True)
-        flash("An error occurred during Google sign-in. Please try again.", category="error")
+        app.logger.error(f"Error in Google API request: {str(e)}")
+        flash("Failed to log in with Google.", "error")
         return False
 
 @app.route('/')
