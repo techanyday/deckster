@@ -19,6 +19,7 @@ from flask_dance.consumer import oauth_authorized
 from sqlalchemy.orm.exc import NoResultFound
 from utils.utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
 from pptx import Presentation
+from pptx.util import Inches
 import time
 from flask import send_from_directory
 from functools import wraps
@@ -346,24 +347,45 @@ def serve_presentation(filename):
 def create_blank_presentation():
     """Create a blank presentation with basic slide layouts initialized"""
     app.logger.debug("Creating blank presentation with default layouts")
-    prs = Presentation()
-    
-    # Log initial state
-    app.logger.debug(f"Initial presentation attributes: {dir(prs)}")
-    app.logger.debug(f"Initial slide masters: {len(prs.slide_masters) if hasattr(prs, 'slide_masters') else 'None'}")
-    
-    # Ensure slide masters and layouts are initialized
-    if not hasattr(prs, 'slide_masters') or len(prs.slide_masters) == 0:
-        app.logger.warning("No slide masters found, presentation may be invalid")
-        raise ValueError("Invalid presentation template: No slide masters available")
-    
-    # Verify slide layouts are available
-    if not hasattr(prs, 'slide_layouts') or len(prs.slide_layouts) == 0:
-        app.logger.warning("No slide layouts found, presentation may be invalid")
-        raise ValueError("Invalid presentation template: No slide layouts available")
-    
-    app.logger.debug(f"Available slide layouts: {len(prs.slide_layouts)}")
-    return prs
+    try:
+        # Create a new presentation with default template
+        prs = Presentation()
+        
+        # Log presentation object type to verify we have the correct object
+        app.logger.debug(f"Presentation object type: {type(prs)}")
+        app.logger.debug(f"Presentation module: {prs.__module__}")
+        
+        # Initialize core components if needed
+        if not hasattr(prs, 'slides'):
+            app.logger.error("Presentation object missing slides attribute")
+            raise ValueError("Invalid presentation object: missing slides")
+            
+        if not hasattr(prs, 'slide_masters'):
+            app.logger.error("Presentation object missing slide_masters attribute")
+            raise ValueError("Invalid presentation object: missing slide masters")
+            
+        if not hasattr(prs, 'slide_layouts'):
+            app.logger.error("Presentation object missing slide_layouts attribute")
+            raise ValueError("Invalid presentation object: missing slide layouts")
+        
+        # Log presentation structure
+        app.logger.debug(f"Slide masters count: {len(prs.slide_masters)}")
+        app.logger.debug(f"Slide layouts count: {len(prs.slide_layouts)}")
+        app.logger.debug(f"Initial slides count: {len(prs.slides)}")
+        
+        # Create a title slide to ensure the presentation is properly initialized
+        title_layout = prs.slide_layouts[0]
+        slide = prs.slides.add_slide(title_layout)
+        
+        # Verify slide was created
+        app.logger.debug(f"Slides after adding title slide: {len(prs.slides)}")
+        app.logger.debug(f"Shapes in title slide: {len(slide.shapes)}")
+        
+        return prs
+        
+    except Exception as e:
+        app.logger.error(f"Error creating blank presentation: {str(e)}")
+        raise ValueError(f"Failed to create presentation: {str(e)}")
 
 @app.route('/generate', methods=['POST'])
 @login_required
@@ -371,8 +393,6 @@ def create_blank_presentation():
 def generate_presentation():
     app.logger.info(f"Generate presentation request received from user: {current_user.email}")
     app.logger.debug(f"Request headers: {dict(request.headers)}")
-    app.logger.debug(f"Request method: {request.method}")
-    app.logger.debug(f"Content-Type: {request.content_type}")
     
     try:
         # Handle both JSON and form data
@@ -418,53 +438,49 @@ def generate_presentation():
         # Try to load template, fallback to blank presentation if needed
         template_path = os.path.join('static', 'templates', f'{theme}_template.pptx')
         try:
+            prs = None
             if os.path.exists(template_path):
                 app.logger.info(f"Loading template from: {template_path}")
-                prs = Presentation(template_path)
-                
-                # Verify template is valid
-                if not hasattr(prs, 'slide_layouts') or len(prs.slide_layouts) == 0:
-                    app.logger.warning("Template has no slide layouts, falling back to blank presentation")
-                    prs = create_blank_presentation()
-            else:
-                app.logger.warning(f"Template not found at {template_path}, creating blank presentation")
+                try:
+                    prs = Presentation(template_path)
+                    # Verify template is valid
+                    if not hasattr(prs, 'slide_layouts') or len(prs.slide_layouts) == 0:
+                        app.logger.warning("Template invalid, falling back to blank presentation")
+                        prs = None
+                except Exception as template_error:
+                    app.logger.error(f"Error loading template: {str(template_error)}")
+                    prs = None
+            
+            if prs is None:
+                app.logger.info("Creating new blank presentation")
                 prs = create_blank_presentation()
             
-            # Log presentation attributes for debugging
-            app.logger.debug("Presentation object created successfully")
-            app.logger.debug(f"Available attributes: {dir(prs)}")
-            app.logger.debug(f"Number of slides: {len(prs.slides)}")
-            app.logger.debug(f"Number of slide masters: {len(prs.slide_masters)}")
-            app.logger.debug(f"Number of slide layouts: {len(prs.slide_layouts)}")
+            # Add title slide content
+            slide = prs.slides[0]  # Use the first slide created in create_blank_presentation
             
-            # Add a title slide
-            title_slide_layout = prs.slide_layouts[0]  # Title Slide layout
-            slide = prs.slides.add_slide(title_slide_layout)
-            
-            # Log slide attributes
-            app.logger.debug(f"Title slide created with layout: {title_slide_layout}")
-            app.logger.debug(f"Slide shapes: {len(slide.shapes)}")
-            app.logger.debug(f"Slide placeholders: {len(slide.placeholders)}")
-            
-            # Get title and subtitle placeholders
+            # Find title and subtitle placeholders
             title = None
             subtitle = None
             
-            for shape in slide.placeholders:
-                if shape.placeholder_format.type == 1:  # Title
-                    title = shape
-                elif shape.placeholder_format.type == 2:  # Subtitle
-                    subtitle = shape
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    if hasattr(shape, 'placeholder_format'):
+                        if shape.placeholder_format.type == 1:  # Title
+                            title = shape.text_frame
+                        elif shape.placeholder_format.type == 2:  # Subtitle
+                            subtitle = shape.text_frame
             
+            # Add text to placeholders
             if title:
                 title.text = topic
             else:
-                app.logger.warning("No title placeholder found in slide")
-                
+                app.logger.warning("No title placeholder found, adding text box")
+                left = top = width = height = Inches(1)
+                txBox = slide.shapes.add_textbox(left, top, width, height)
+                txBox.text_frame.text = topic
+            
             if subtitle:
                 subtitle.text = f"Generated for {current_user.name}"
-            else:
-                app.logger.warning("No subtitle placeholder found in slide")
             
             # Save the presentation
             prs.save(filepath)
@@ -481,32 +497,11 @@ def generate_presentation():
             })
             
         except Exception as e:
-            error_msg = str(e)
-            app.logger.error(f"Error generating presentation: {error_msg}")
-            
-            # Try one last time with absolutely minimal presentation
-            try:
-                app.logger.info("Attempting final fallback with minimal presentation")
-                prs = Presentation()
-                slide = prs.slides.add_slide(prs.slide_layouts[0])
-                
-                if hasattr(slide.shapes, 'title') and slide.shapes.title:
-                    slide.shapes.title.text = topic
-                
-                prs.save(filepath)
-                download_url = url_for('serve_presentation', filename=filename)
-                
-                return jsonify({
-                    "success": True,
-                    "message": "Presentation generated with minimal template",
-                    "download_url": download_url
-                })
-            except Exception as e2:
-                app.logger.error(f"Final fallback failed: {str(e2)}")
-                return jsonify({"success": False, "error": "Could not generate presentation with any template"}), 500
+            app.logger.error(f"Error in presentation generation: {str(e)}")
+            return jsonify({"success": False, "error": str(e)}), 500
             
     except Exception as e:
-        app.logger.error(f"Error in presentation generation: {str(e)}")
+        app.logger.error(f"Error in request handling: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/pricing')
