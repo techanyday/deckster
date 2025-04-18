@@ -87,7 +87,6 @@ document.addEventListener('DOMContentLoaded', function() {
         form.addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            // Reset UI state
             loadingIndicator.classList.remove('hidden');
             errorMessage.classList.add('hidden');
             downloadSection.classList.add('hidden');
@@ -95,20 +94,33 @@ document.addEventListener('DOMContentLoaded', function() {
             loadingSpinner.classList.remove('hidden');
             
             try {
-                const response = await apiCall('/generate', 'POST', {
+                const formData = {
                     topic: document.getElementById('topic').value,
                     num_slides: parseInt(document.getElementById('slides').value),
                     theme: document.getElementById('theme').value
+                };
+
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    },
+                    body: JSON.stringify(formData)
                 });
                 
-                if (response.success) {
-                    downloadLink.href = response.download_url;
+                const data = await response.json();
+                
+                if (data.success) {
                     downloadSection.classList.remove('hidden');
+                    downloadLink.href = data.download_url;
                 } else {
-                    throw new Error(response.error || 'Failed to generate presentation');
+                    errorMessage.textContent = data.error || 'Failed to generate presentation';
+                    errorMessage.classList.remove('hidden');
                 }
             } catch (error) {
-                errorMessage.textContent = error.message;
+                console.error('Error:', error);
+                errorMessage.textContent = 'An error occurred while generating the presentation';
                 errorMessage.classList.remove('hidden');
             } finally {
                 loadingIndicator.classList.add('hidden');
