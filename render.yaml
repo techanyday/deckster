@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: ppt-generator
+    name: decklyst
     env: python
     plan: free
-    buildCommand: chmod +x start.sh && pip install -r requirements.txt
-    startCommand: ./start.sh
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 180
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.7
@@ -18,13 +18,13 @@ services:
         generateValue: true
       - key: DATABASE_URL
         fromDatabase:
-          name: ppt-generator-db
+          name: decklyst-db
           property: connectionString
       - key: PAYSTACK_PLAN_PRO_MONTHLY
         sync: false
       - key: PAYSTACK_PLAN_BUSINESS_MONTHLY
         sync: false
-    healthCheckPath: /
+    healthCheckPath: /healthz
     autoDeploy: true
     disk:
       name: temp
@@ -32,6 +32,6 @@ services:
       sizeGB: 1
 
   - type: postgres
-    name: ppt-generator-db
+    name: decklyst-db
     plan: free
     ipAllowList: []
