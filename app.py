@@ -1,677 +1,238 @@
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
+from flask import Flask, render_template, request, send_file, jsonify, session, redirect, url_for, flash
+from text_generation import TextGenerator
+from slides_generator import SlidesGenerator
+from payment_handler import PaystackHandler, PaymentSession
+from flask_bootstrap import Bootstrap
+from flask_wtf.csrf import CSRFProtect
+from flask_wtf import FlaskForm
 import os
-import json
+from datetime import datetime
+import uuid
 from dotenv import load_dotenv
 import logging
-from datetime import datetime
-from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError, validate_csrf
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
-from flask_cors import CORS
-import tempfile
-import requests
-from PIL import Image
-from io import BytesIO
-import openai
-from flask_dance.contrib.google import make_google_blueprint, google
-from flask_dance.consumer.storage.sqla import OAuthConsumerMixin, SQLAlchemyStorage
-from flask_dance.consumer import oauth_authorized
-from sqlalchemy.orm.exc import NoResultFound
-from utils.utils import check_user_limits, get_max_slides, add_watermark, generate_presentation_content, create_ppt
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.enum.text import PP_ALIGN
-import time
-from flask import send_from_directory
-from functools import wraps
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-123')
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp_presentations')
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 # Initialize extensions
-db = SQLAlchemy()
-login_manager = LoginManager()
-csrf = CSRFProtect()
+bootstrap = Bootstrap(app)
+csrf = CSRFProtect(app)
 
-# Initialize Google Blueprint globally
-google_bp = make_google_blueprint(
-    client_id=os.getenv('GOOGLE_CLIENT_ID'),
-    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
-    scope=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-    redirect_to='index'  # Redirect to index page after login
-)
+# Initialize handlers
+try:
+    text_generator = TextGenerator()
+    slides_generator = SlidesGenerator()
+    paystack_handler = PaystackHandler()
+    logger.info("Successfully initialized all handlers")
+except Exception as e:
+    logger.error(f"Error initializing handlers: {str(e)}", exc_info=True)
+    raise
 
-# Configure static folder for Render deployment
-if os.environ.get('RENDER'):
-    # On Render, use a tmp directory that we have write access to
-    STATIC_FOLDER = '/tmp/static'
-    PRESENTATION_FOLDER = os.path.join(STATIC_FOLDER, 'presentations')
-else:
-    # Local development
-    STATIC_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-    PRESENTATION_FOLDER = os.path.join(STATIC_FOLDER, 'presentations')
+# Payment amount in GHS (or your preferred currency)
+PAYMENT_AMOUNT = 20.00
 
-# Models
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    name = db.Column(db.String(120))
-    google_id = db.Column(db.String(256), unique=True)
-
-    def get_id(self):
-        return str(self.id)
-
-class OAuth(OAuthConsumerMixin, db.Model):
-    __tablename__ = "flask_dance_oauth"
-    provider_user_id = db.Column(db.String(256), unique=True)
-    user_id = db.Column(db.Integer, db.ForeignKey(User.id))
-    user = db.relationship(User)
-
-    def set_token(self, token):
-        app.logger.debug(f"Token type: {type(token)}")
-        app.logger.debug(f"Token content: {token}")
-        
-        # Convert token to dictionary if it's not already
-        if not isinstance(token, dict):
-            try:
-                if hasattr(token, 'token'):
-                    token = token.token
-                token = {
-                    'access_token': getattr(token, 'access_token', None),
-                    'token_type': getattr(token, 'token_type', None),
-                    'scope': getattr(token, 'scope', []),
-                    'expires_in': getattr(token, 'expires_in', None),
-                    'expires_at': getattr(token, 'expires_at', None),
-                    'id_token': getattr(token, 'id_token', None)
-                }
-            except Exception as e:
-                app.logger.error(f"Error converting token to dictionary: {str(e)}")
-                token = {}
-        
-        app.logger.debug(f"Token after conversion: {token}")
-        
-        try:
-            # Clean up the token dictionary
-            token_dict = {
-                'access_token': str(token.get('access_token', '')),
-                'token_type': str(token.get('token_type', '')),
-                'scope': token.get('scope', []),
-                'expires_in': int(token.get('expires_in', 0)),
-                'expires_at': float(token.get('expires_at', 0)),
-                'id_token': str(token.get('id_token', ''))
-            }
-            
-            # Convert scope to string if it's a list
-            if isinstance(token_dict['scope'], list):
-                token_dict['scope'] = ' '.join(token_dict['scope'])
-            
-            app.logger.debug(f"Final token_dict: {token_dict}")
-            json_token = json.dumps(token_dict)
-            app.logger.debug(f"JSON token: {json_token}")
-            self.token = json_token
-            
-        except Exception as e:
-            app.logger.error(f"Error in token serialization: {str(e)}")
-            self.token = json.dumps({})
-
-    def get_token(self):
-        try:
-            app.logger.debug(f"Stored token: {self.token}")
-            token_dict = json.loads(self.token)
-            app.logger.debug(f"Loaded token dict: {token_dict}")
-            # Convert scope back to list if it was stored as a string
-            if isinstance(token_dict.get('scope'), str):
-                token_dict['scope'] = token_dict['scope'].split()
-            return token_dict
-        except json.JSONDecodeError as e:
-            app.logger.error(f"Failed to decode token JSON: {str(e)}")
-            return {}
-        except Exception as e:
-            app.logger.error(f"Unexpected error in get_token: {str(e)}")
-            return {}
-
-class Presentation(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(120), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    user = db.relationship('User', backref=db.backref('presentations', lazy=True))
-    file_path = db.Column(db.String(500))
-    status = db.Column(db.String(50), default='pending')
-    error_message = db.Column(db.Text)
-
-def create_app():
-    app = Flask(__name__, static_folder=STATIC_FOLDER)
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key')
-    app.config['STATIC_FOLDER'] = STATIC_FOLDER
-    app.config['PRESENTATION_FOLDER'] = PRESENTATION_FOLDER
-    
-    # Configure logging
-    logging.basicConfig(level=logging.DEBUG)
-    app.logger.setLevel(logging.DEBUG)
-
-    # Configure database
-    database_url = os.getenv('DATABASE_URL')
-    if database_url and database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///app.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['WTF_CSRF_ENABLED'] = True
-    
-    # Initialize extensions with app
-    db.init_app(app)
-    login_manager.init_app(app)
-    csrf.init_app(app)
-    
-    # Register Google Blueprint
-    app.register_blueprint(google_bp, url_prefix='/login')
-    
-    # Configure OAuth storage
-    google_bp.storage = SQLAlchemyStorage(OAuth, db.session, user=current_user)
-    
-    # Create database tables
-    with app.app_context():
-        try:
-            db.create_all()
-            app.logger.info("Database tables created successfully")
-        except Exception as e:
-            app.logger.error(f"Error creating database tables: {str(e)}")
-    
-    # Ensure static folders exist
-    os.makedirs(PRESENTATION_FOLDER, exist_ok=True)
-    app.logger.info(f'Static folder configured at: {STATIC_FOLDER}')
-    app.logger.info(f'Presentations folder configured at: {PRESENTATION_FOLDER}')
-    
-    return app
-
-app = create_app()
-
-# Custom CSRF error handler
-@app.errorhandler(CSRFError)
-def handle_csrf_error(e):
-    app.logger.error(f"CSRF Error: {str(e)}")
-    return jsonify(error="CSRF token validation failed"), 400
-
-# Custom decorator for JSON CSRF validation
-def csrf_protect_json():
-    def decorator(view_function):
-        @wraps(view_function)
-        def wrapped_view(*args, **kwargs):
-            # Check for CSRF token in various places
-            token = request.headers.get('X-CSRF-Token') or request.headers.get('X-CSRFToken')
-            
-            if not token and request.is_json:
-                # Try to get token from JSON body
-                data = request.get_json()
-                if data and 'csrf_token' in data:
-                    token = data['csrf_token']
-            
-            if not token and request.form:
-                # Try to get token from form data
-                token = request.form.get('csrf_token')
-            
-            app.logger.debug(f"Found CSRF token: {bool(token)}")
-            app.logger.debug(f"Request headers: {dict(request.headers)}")
-            
-            if not token:
-                app.logger.error("No CSRF token found in request")
-                return jsonify(error="Missing CSRF token"), 400
-            
-            try:
-                app.logger.debug("Validating CSRF token")
-                validate_csrf(token)
-                app.logger.info("CSRF token validation successful")
-                return view_function(*args, **kwargs)
-            except Exception as e:
-                app.logger.error(f"CSRF validation failed: {str(e)}")
-                return jsonify(error="Invalid CSRF token"), 400
-            
-        return wrapped_view
-    return decorator
-
-# Add CSRF token to all responses
-@app.after_request
-def add_csrf_token(response):
-    if 'text/html' in response.headers.get('Content-Type', ''):
-        token = generate_csrf()
-        app.logger.debug(f"Generated new CSRF token")
-        response.set_cookie('csrf_token', token, secure=True, httponly=True, samesite='Strict')
-    return response
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+# Create a simple form for CSRF protection
+class EmptyForm(FlaskForm):
+    pass
 
 @app.before_request
-def before_request():
-    if not request.is_secure and app.env != 'development':
-        url = request.url.replace('http://', 'https://', 1)
-        return redirect(url, code=301)
+def check_session():
+    """Ensure user has a session ID and payment session."""
+    if 'session_id' not in session:
+        session['session_id'] = str(uuid.uuid4())
+        logger.debug(f"Created new session ID: {session['session_id']}")
+    if 'payment_session' not in session:
+        session['payment_session'] = PaymentSession(session['session_id']).__dict__
+        logger.debug("Created new payment session")
 
-@oauth_authorized.connect_via(google_bp)
-def google_logged_in(blueprint, token):
-    try:
-        if not token:
-            app.logger.error("Failed to get OAuth token")
-            return False
+def get_payment_session() -> PaymentSession:
+    """Get or create payment session for the current user."""
+    if 'payment_session' in session:
+        # Convert dict back to PaymentSession object
+        data = session['payment_session']
+        payment_session = PaymentSession(data['session_id'])
+        payment_session.__dict__.update(data)
+        logger.debug(f"Retrieved payment session: {payment_session.__dict__}")
+        return payment_session
+    return PaymentSession(session['session_id'])
 
-        resp = blueprint.session.get('/oauth2/v2/userinfo')
-        if not resp.ok:
-            app.logger.error(f"Failed to get user info: {resp.text}")
-            return False
-
-        google_info = resp.json()
-        email = google_info['email']
-        
-        # Find or create user
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            user = User(
-                email=email,
-                name=google_info.get('name', email.split('@')[0]),
-                google_id=google_info['id']
-            )
-            db.session.add(user)
-            
-            # Create OAuth entry
-            oauth = OAuth(
-                provider=blueprint.name,
-                provider_user_id=google_info['id'],
-                token=token,
-                user=user
-            )
-            db.session.add(oauth)
-            
-            try:
-                db.session.commit()
-            except Exception as e:
-                app.logger.error(f"Error saving user: {str(e)}")
-                db.session.rollback()
-                return False
-        
-        # Log in the user
-        login_user(user)
-        app.logger.info(f"Successfully logged in user {email}")
-        
-        # Return False to disable Flask-Dance's default behavior
-        return False
-        
-    except Exception as e:
-        app.logger.error(f"Error in OAuth callback: {str(e)}")
-        return False
+def save_payment_session(payment_session: PaymentSession):
+    """Save payment session to Flask session."""
+    session['payment_session'] = payment_session.__dict__
+    session.modified = True
+    logger.debug(f"Saved payment session: {payment_session.__dict__}")
 
 @app.route('/')
 def index():
-    return render_template('index.html')
-
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    return redirect(url_for('index'))
-
-@app.route('/login')
-def login():
-    return redirect(url_for('google.login'))
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    return jsonify({
-        'status': 'error',
-        'message': 'Registration is not available. Please use Google to sign in.'
-    }), 400
-
-@app.route('/verify-email/<token>')
-def verify_email(token):
-    return jsonify({
-        'status': 'error',
-        'message': 'Email verification is not available. Please use Google to sign in.'
-    }), 400
-
-@app.route('/resend-verification', methods=['POST'])
-def resend_verification():
-    return jsonify({
-        'status': 'error',
-        'message': 'Email verification is not available. Please use Google to sign in.'
-    }), 400
-
-@app.route('/static/presentations/<path:filename>')
-def serve_presentation(filename):
-    app.logger.info(f'Serving presentation file: {filename}')
-    try:
-        return send_from_directory(app.config['PRESENTATION_FOLDER'], filename, as_attachment=True)
-    except Exception as e:
-        app.logger.error(f'Error serving file {filename}: {str(e)}')
-        return jsonify({'error': 'File not found'}), 404
-
-def create_blank_presentation():
-    """Create a presentation using the default template"""
-    app.logger.debug("Creating presentation with default template")
-    try:
-        # Create presentation with default template
-        prs = Presentation()
-        
-        # Log initial state
-        app.logger.debug(f"Presentation object type: {type(prs).__name__}")
-        app.logger.debug(f"Presentation module: {prs.__class__.__module__}")
-        app.logger.debug(f"Slide masters: {len(prs.slide_masters)}")
-        app.logger.debug(f"Available layouts: {[layout.name for layout in prs.slide_layouts]}")
-        
-        # Use title slide layout (usually the first one)
-        title_layout = prs.slide_layouts[0]
-        app.logger.debug(f"Using layout: {title_layout.name}")
-        
-        # Create title slide
-        slide = prs.slides.add_slide(title_layout)
-        app.logger.debug(f"Slide created, shapes: {len(slide.shapes)}")
-        
-        # Find title and subtitle placeholders
-        title = None
-        subtitle = None
-        
-        for shape in slide.placeholders:
-            app.logger.debug(f"Found placeholder: {shape.placeholder_format.type} - {shape.name}")
-            if shape.placeholder_format.type == 1:  # Title
-                title = shape
-            elif shape.placeholder_format.type == 2:  # Subtitle
-                subtitle = shape
-        
-        # If no placeholders found, create text boxes
-        if not title:
-            app.logger.warning("No title placeholder, creating text box")
-            title_box = slide.shapes.add_textbox(
-                left=Inches(1),
-                top=Inches(1),
-                width=Inches(8),
-                height=Inches(1.5)
-            )
-            title = title_box
-            
-        if not subtitle:
-            app.logger.warning("No subtitle placeholder, creating text box")
-            subtitle_box = slide.shapes.add_textbox(
-                left=Inches(1),
-                top=Inches(3),
-                width=Inches(8),
-                height=Inches(1)
-            )
-            subtitle = subtitle_box
-        
-        # Add placeholder text
-        if hasattr(title, 'text_frame'):
-            title.text_frame.clear()
-            p = title.text_frame.paragraphs[0]
-            p.alignment = PP_ALIGN.CENTER
-            run = p.add_run()
-            run.text = "Title"
-            font = run.font
-            font.size = Pt(44)
-            font.bold = True
-            
-        if hasattr(subtitle, 'text_frame'):
-            subtitle.text_frame.clear()
-            p = subtitle.text_frame.paragraphs[0]
-            p.alignment = PP_ALIGN.CENTER
-            run = p.add_run()
-            run.text = "Subtitle"
-            font = run.font
-            font.size = Pt(24)
-        
-        # Log final state
-        app.logger.debug(f"Slides: {len(prs.slides)}, Shapes in slide: {len(slide.shapes)}")
-        return prs
-        
-    except Exception as e:
-        app.logger.error(f"Error creating presentation: {str(e)}")
-        raise ValueError(f"Failed to create presentation: {str(e)}")
+    form = EmptyForm()
+    logger.debug("Rendering index page with CSRF form")
+    return render_template('index.html', form=form)
 
 @app.route('/generate', methods=['POST'])
-@login_required
-@csrf_protect_json()
-def generate_presentation():
-    app.logger.info(f"Generate presentation request received from user: {current_user.email}")
-    app.logger.debug(f"Request headers: {dict(request.headers)}")
-    
+def generate():
     try:
-        # Handle both JSON and form data
-        if request.is_json:
-            app.logger.debug("Processing JSON request")
-            data = request.get_json()
-        else:
-            app.logger.debug("Processing form data request")
-            data = {
-                'topic': request.form.get('topic'),
-                'num_slides': request.form.get('slides'),
-                'theme': request.form.get('theme')
-            }
+        logger.info("Starting presentation generation")
+        logger.debug(f"Form data: {request.form}")
         
-        app.logger.debug(f"Received data: {data}")
-        
-        if not data:
-            app.logger.error("No data received in request")
-            return jsonify({"success": False, "error": "No data received"}), 400
-            
-        topic = data.get('topic')
-        num_slides = int(data.get('num_slides', data.get('slides', 5)))
-        theme = data.get('theme', 'professional')
-        
+        topic = request.form.get('topic')
         if not topic:
-            app.logger.error("Missing topic in request")
-            return jsonify({"success": False, "error": "Topic is required"}), 400
-            
-        app.logger.info(f"Generating presentation: {topic}, {num_slides} slides, {theme} theme")
+            logger.warning("No topic provided in form data")
+            return jsonify({'error': 'No topic provided'}), 400
+
+        # Get payment session
+        payment_session = get_payment_session()
+        logger.info(f"Payment session: {payment_session.__dict__}")
         
-        # Create presentations directory if it doesn't exist
-        if not os.path.exists(app.config['PRESENTATION_FOLDER']):
-            app.logger.info(f"Creating presentations directory: {app.config['PRESENTATION_FOLDER']}")
-            os.makedirs(app.config['PRESENTATION_FOLDER'])
-        
-        # Generate unique filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"presentation_{timestamp}_{current_user.id}.pptx"
-        filepath = os.path.join(app.config['PRESENTATION_FOLDER'], filename)
-        
-        app.logger.info(f"Saving presentation to: {filepath}")
-        
-        # Create presentation
+        # Check if user can generate more slides
+        can_continue, message = payment_session.increment_slides()
+        if not can_continue:
+            save_payment_session(payment_session)
+            logger.info("User reached free limit")
+            return jsonify({
+                'error': message,
+                'payment_required': True
+            }), 402
+
+        # Generate content
+        logger.info(f"Generating content for topic: {topic}")
         try:
-            # Create blank presentation first
-            prs = create_blank_presentation()
-            
-            # Update first slide content
-            slide = prs.slides[0]
-            
-            # Update title and subtitle
-            for shape in slide.shapes:
-                if shape.has_text_frame:
-                    text_frame = shape.text_frame
-                    if text_frame.text == "Title":
-                        text_frame.clear()
-                        p = text_frame.paragraphs[0]
-                        p.alignment = PP_ALIGN.CENTER
-                        run = p.add_run()
-                        run.text = topic
-                        font = run.font
-                        font.size = Pt(44)
-                        font.bold = True
-                    elif text_frame.text == "Subtitle":
-                        text_frame.clear()
-                        p = text_frame.paragraphs[0]
-                        p.alignment = PP_ALIGN.CENTER
-                        run = p.add_run()
-                        run.text = f"Generated for {current_user.name}"
-                        font = run.font
-                        font.size = Pt(24)
-            
-            # Save the presentation
-            prs.save(filepath)
-            app.logger.info("Presentation saved successfully")
-            
-            # Generate download URL
-            download_url = url_for('serve_presentation', filename=filename)
-            app.logger.info(f"Download URL: {download_url}")
-            
-            return jsonify({
-                "success": True,
-                "message": "Presentation generated successfully",
-                "download_url": download_url
-            })
-            
+            content = text_generator(topic, max_slides=5 if not payment_session.payment_status else 10)
+            logger.debug(f"Generated content: {content}")
         except Exception as e:
-            app.logger.error(f"Error in presentation generation: {str(e)}")
-            return jsonify({"success": False, "error": str(e)}), 500
-            
-    except Exception as e:
-        app.logger.error(f"Error in request handling: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
+            logger.error(f"Text generation error: {str(e)}", exc_info=True)
+            return jsonify({'error': str(e)}), 500
 
-@app.route('/pricing')
-def pricing():
-    return render_template('pricing.html', plans=['free', 'pro', 'business'])
+        # Create unique filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"presentation_{timestamp}.pptx"
+        output_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-@app.route('/subscribe', methods=['POST'])
-@login_required
-def subscribe():
-    try:
-        data = request.get_json()
-        plan = data.get('plan')
+        # Generate presentation
+        logger.info(f"Generating presentation at: {output_path}")
+        try:
+            slides_generator.generate_presentation(content, output_path)
+            logger.info("Presentation generated successfully")
+        except Exception as e:
+            logger.error(f"Slides generation error: {str(e)}", exc_info=True)
+            return jsonify({'error': str(e)}), 500
         
-        if not plan or plan not in ['free', 'pro', 'business']:
-            return jsonify({
-                'status': 'error',
-                'message': 'Invalid subscription plan'
-            }), 400
-            
-        if plan == 'free':
-            current_user.subscription_type = 'free'
-            db.session.commit()
-            return jsonify({
-                'status': 'success',
-                'message': 'Successfully subscribed to Free plan'
-            })
-            
-        # For paid plans, initialize payment with Paystack
-        amount = {
-            'pro': 1000,  # ₦1,000 per month
-            'business': 5000  # ₦5,000 per month
-        }.get(plan)
-        
-        url = "https://api.paystack.co/transaction/initialize"
-        headers = {
-            "Authorization": f"Bearer {app.config['PAYSTACK_SECRET_KEY']}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "email": current_user.email,
-            "amount": amount * 100,  # Amount in kobo
-            "callback_url": url_for('payment_callback', _external=True),
-            "metadata": {
-                "plan": plan,
-                "user_id": current_user.id
-            }
-        }
-        
-        response = requests.post(url, headers=headers, json=data)
-        if response.ok:
-            data = response.json()
-            if data.get('status'):
-                return jsonify({
-                    'status': 'success',
-                    'authorization_url': data['data']['authorization_url']
-                })
-                
+        # Save session
+        save_payment_session(payment_session)
+
         return jsonify({
-            'status': 'error',
-            'message': 'Failed to initialize payment'
+            'success': True,
+            'filename': filename,
+            'message': message,
+            'payment_status': payment_session.payment_status
+        })
+
+    except Exception as e:
+        logger.error(f"Error generating presentation: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': str(e) if app.debug else 'Something went wrong, please try again later'
         }), 500
+
+@app.route('/payment/initialize', methods=['POST'])
+def initialize_payment():
+    try:
+        logger.info("Starting payment initialization")
+        logger.debug(f"Form data: {request.form}")
         
-    except Exception as e:
-        app.logger.error(f"Subscription error: {str(e)}")
+        email = request.form.get('email')
+        if not email:
+            logger.warning("No email provided in form data")
+            return jsonify({'error': 'Email is required'}), 400
+
+        # Initialize payment
+        success, message, auth_url = paystack_handler.initialize_payment(email, PAYMENT_AMOUNT)
+        logger.info(f"Payment initialization result: success={success}, message={message}")
+        
+        if success and auth_url:
+            return jsonify({
+                'success': True,
+                'authorization_url': auth_url
+            })
+        
         return jsonify({
-            'status': 'error',
-            'message': 'An error occurred while processing your subscription'
+            'error': message
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Payment initialization error: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': str(e) if app.debug else 'Failed to initialize payment'
         }), 500
 
 @app.route('/payment/callback')
-@login_required
 def payment_callback():
-    reference = request.args.get('reference')
-    if not reference:
-        flash('No reference provided')
-        return redirect(url_for('pricing'))
-        
     try:
-        # Verify the transaction
-        response = verify_paystack_transaction(reference)
+        logger.info("Processing payment callback")
+        logger.debug(f"Callback args: {request.args}")
         
-        if response.get('status') and response['data']['status'] == 'success':
-            metadata = response['data']['metadata']
-            plan = metadata.get('plan')
+        reference = request.args.get('reference')
+        if not reference:
+            logger.warning("No reference provided in callback")
+            flash('Payment verification failed: No reference provided', 'error')
+            return redirect(url_for('index'))
+
+        # Verify payment
+        success, message, transaction_data = paystack_handler.verify_payment(reference)
+        logger.info(f"Payment verification result: success={success}, message={message}")
+        
+        if success:
+            # Update payment session
+            payment_session = get_payment_session()
+            payment_session.complete_payment()
+            save_payment_session(payment_session)
             
-            if plan in ['pro', 'business']:
-                current_user.subscription_type = plan
-                db.session.commit()
-                flash(f'Successfully subscribed to {plan.title()} plan!')
-            else:
-                flash('Invalid subscription plan')
+            flash('Payment successful! You now have unlimited access.', 'success')
         else:
-            flash('Payment verification failed')
-            
+            flash(f'Payment verification failed: {message}', 'error')
+
+        return redirect(url_for('index'))
     except Exception as e:
-        app.logger.error(f"Payment callback error: {str(e)}")
-        flash('An error occurred while processing your payment')
-        
-    return redirect(url_for('pricing'))
+        logger.error(f"Payment callback error: {str(e)}", exc_info=True)
+        flash('An error occurred while processing your payment', 'error')
+        return redirect(url_for('index'))
 
 @app.route('/download/<filename>')
-@login_required
-def download_presentation(filename):
+def download(filename):
     try:
-        # Get the presentation from the database
-        presentation = Presentation.query.filter(
-            Presentation.user_id == current_user.id,
-            Presentation.file_path.like(f"%{filename}")
-        ).first()
-        
-        if not presentation:
+        logger.info(f"Starting download for file: {filename}")
+        # Check payment status
+        payment_session = get_payment_session()
+        if not payment_session.payment_status:
+            logger.warning("Unpaid user attempted to download file")
             return jsonify({
-                'status': 'error',
-                'message': 'Presentation not found'
-            }), 404
-            
-        if not os.path.exists(presentation.file_path):
-            return jsonify({
-                'status': 'error',
-                'message': 'Presentation file not found'
-            }), 404
-            
+                'error': 'Payment required to download presentations'
+            }), 402
+
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if not os.path.exists(file_path):
+            logger.error(f"File not found: {file_path}")
+            raise FileNotFoundError('Presentation file not found')
+
+        logger.info(f"Sending file: {file_path}")
         return send_file(
-            presentation.file_path,
+            file_path,
             as_attachment=True,
-            download_name='presentation.pptx'
+            download_name=filename
         )
-        
     except Exception as e:
-        app.logger.error(f"Error downloading presentation: {str(e)}")
+        logger.error(f"Download error: {str(e)}", exc_info=True)
         return jsonify({
-            'status': 'error',
-            'message': 'Failed to download presentation'
-        }), 500
-
-@app.route('/forgot-password', methods=['GET', 'POST'])
-def forgot_password():
-    return jsonify({
-        'status': 'error',
-        'message': 'Password reset is not available. Please use Google to sign in.'
-    }), 400
-
-@app.route('/reset-password/<token>', methods=['GET', 'POST'])
-def reset_password(token):
-    return jsonify({
-        'status': 'error',
-        'message': 'Password reset is not available. Please use Google to sign in.'
-    }), 400
+            'error': str(e) if app.debug else 'File not found'
+        }), 404
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
