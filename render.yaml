@@ -4,10 +4,14 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180
+    startCommand: python -m gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.7
+      - key: PATH
+        value: /usr/local/bin:/usr/bin:/bin:/opt/render/project/.local/bin:/opt/render/project/bin:${PATH}
+      - key: PYTHONPATH
+        value: /opt/render/project
       - key: OPENAI_API_KEY
         sync: false
       - key: PAYSTACK_SECRET_KEY
