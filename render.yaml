@@ -3,17 +3,11 @@ services:
     name: decklyst
     env: python
     plan: free
-    buildCommand: chmod +x start.sh
-    startCommand: ./start.sh
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.7
-      - key: PATH
-        value: /opt/render/project/venv/bin:/usr/local/bin:/usr/bin:/bin:${PATH}
-      - key: PYTHONPATH
-        value: /opt/render/project
-      - key: VIRTUAL_ENV
-        value: /opt/render/project/venv
       - key: OPENAI_API_KEY
         sync: false
       - key: PAYSTACK_SECRET_KEY
@@ -26,6 +20,8 @@ services:
         fromDatabase:
           name: decklyst-db
           property: connectionString
+      - key: FLASK_ENV
+        value: production
       - key: PAYSTACK_PLAN_PRO_MONTHLY
         sync: false
       - key: PAYSTACK_PLAN_BUSINESS_MONTHLY
