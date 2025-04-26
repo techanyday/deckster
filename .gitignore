@@ -38,6 +38,8 @@ temp/
 
 # Generated files
 *.pdf
+temp_presentations/
+*.pptx
 
 # Keep PowerPoint templates
 !static/templates/*.pptx
