@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PowerPoint Generator</title>
+    <title>Decklyst - PowerPoint Generator</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
         :root {
@@ -46,204 +45,6 @@
             top: 0;
             z-index: 1000;
         }
-        
-        .nav-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .nav-brand {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--primary-color);
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            transition: color 0.2s;
-        }
-        
-        .nav-brand:hover {
-            color: var(--primary-dark);
-        }
-        
-        .nav-brand i {
-            font-size: 1.5rem;
-        }
-        
-        .nav-links {
-            display: flex;
-            gap: 2rem;
-            align-items: center;
-        }
-        
-        .nav-link {
-            color: var(--text-color);
-            text-decoration: none;
-            font-weight: 500;
-            font-size: 0.95rem;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 0.375rem;
-            padding: 0.5rem 0.75rem;
-            border-radius: var(--radius);
-        }
-        
-        .nav-link:hover {
-            color: var(--primary-color);
-            background: rgba(74, 144, 226, 0.05);
-        }
-        
-        .nav-link.active {
-            color: var(--primary-color);
-            background: rgba(74, 144, 226, 0.1);
-        }
-        
-        .nav-link i {
-            font-size: 1rem;
-        }
-        
-        .btn {
-            padding: 0.5rem 1.25rem;
-            border-radius: var(--radius);
-            font-weight: 500;
-            font-size: 0.95rem;
-            text-decoration: none;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            border: none;
-            cursor: pointer;
-        }
-        
-        .btn-primary {
-            background: var(--primary-color);
-            color: var(--white);
-        }
-        
-        .btn-primary:hover {
-            background: var(--primary-dark);
-            transform: translateY(-1px);
-            box-shadow: var(--shadow-md);
-        }
-        
-        .user-section {
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-        }
-        
-        .user-email {
-            color: var(--text-light);
-            font-size: 0.95rem;
-        }
-        
-        main {
-            flex: 1;
-            padding: 2rem 0;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 2rem;
-        }
-        
-        .footer {
-            background: var(--white);
-            padding: 1.5rem 0;
-            margin-top: auto;
-            border-top: 1px solid var(--border-color);
-        }
-        
-        .footer-content {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 2rem;
-            text-align: center;
-            color: var(--text-light);
-            font-size: 0.9rem;
-        }
-        
-        .flash-messages {
-            max-width: 1200px;
-            margin: 1rem auto;
-            padding: 0 2rem;
-        }
-        
-        .flash-message {
-            padding: 1rem;
-            border-radius: var(--radius);
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-size: 0.95rem;
-            animation: slideIn 0.3s ease-out;
-        }
-        
-        @keyframes slideIn {
-            from {
-                transform: translateY(-10px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-        
-        .flash-message.success {
-            background: #ebf7ed;
-            color: #0f5132;
-            border: 1px solid #d1e7dd;
-        }
-        
-        .flash-message.error {
-            background: #f8d7da;
-            color: #842029;
-            border: 1px solid #f5c2c7;
-        }
-        
-        .flash-message i {
-            font-size: 1.1rem;
-        }
-        
-        @media (max-width: 768px) {
-            .nav-container {
-                padding: 0 1rem;
-            }
-            
-            .nav-brand span {
-                display: none;
-            }
-            
-            .nav-links {
-                gap: 1rem;
-            }
-            
-            .nav-link {
-                padding: 0.375rem 0.625rem;
-            }
-            
-            .user-section {
-                gap: 1rem;
-            }
-            
-            .user-email {
-                display: none;
-            }
-            
-            .container {
-                padding: 0 1rem;
-            }
-        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -253,30 +54,8 @@
             <div class="flex justify-between h-16">
                 <div class="flex">
                     <div class="flex-shrink-0 flex items-center">
-                        <a href="/" class="text-2xl font-bold text-indigo-600">PowerPoint Generator</a>
+                        <a href="/" class="text-2xl font-bold text-indigo-600">Decklyst</a>
                     </div>
-                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
-                        <a href="/" class="px-4 py-2 text-gray-700 hover:text-indigo-600 transition-colors duration-200{% if request.path == '/' %} text-indigo-600 font-semibold{% endif %}">
-                            <i class="fas fa-home mr-2"></i>Home
-                        </a>
-                        <a href="/pricing" class="px-4 py-2 text-gray-700 hover:text-indigo-600 transition-colors duration-200{% if request.path == '/pricing' %} text-indigo-600 font-semibold{% endif %}">
-                            <i class="fas fa-tag mr-2"></i>Pricing
-                        </a>
-                    </div>
-                </div>
-                <div class="hidden sm:ml-6 sm:flex sm:items-center">
-                    {% if current_user.is_authenticated %}
-                    <span class="text-gray-700 mr-4">
-                        <i class="fas fa-user mr-2"></i>{{ current_user.email }}
-                    </span>
-                    <a href="/logout" class="px-6 py-2 rounded-lg transition-all duration-200 font-semibold border-2 border-indigo-600 text-indigo-600 hover:bg-indigo-600 hover:text-white">
-                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                    </a>
-                    {% else %}
-                    <a href="{{ url_for('login') }}" class="px-6 py-2 rounded-lg transition-all duration-200 font-semibold bg-indigo-600 text-white hover:bg-indigo-700">
-                        <i class="fab fa-google mr-2"></i>Sign in with Google
-                    </a>
-                    {% endif %}
                 </div>
             </div>
         </div>
@@ -297,8 +76,25 @@
     </main>
 
     <script>
+        // Debug logging function
+        function debugLog(message, data = null) {
+            const timestamp = new Date().toISOString();
+            if (data) {
+                console.log(`[${timestamp}] ${message}:`, data);
+            } else {
+                console.log(`[${timestamp}] ${message}`);
+            }
+        }
+
+        // Error logging function
+        function errorLog(message, error = null) {
+            console.error(`[ERROR] ${message}`, error || '');
+            // You can also send errors to your server here
+        }
+
         // Handle flash messages
         document.addEventListener('DOMContentLoaded', function() {
+            debugLog('DOM Content Loaded');
             const flashMessages = document.querySelectorAll('[class*="bg-"][class*="-100"]');
             flashMessages.forEach(function(flash) {
                 setTimeout(function() {
@@ -310,28 +106,37 @@
                 }, 5000);
             });
         });
-    </script>
-    <script>
-        // Add CSRF token to all AJAX requests
-        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-        
-        // Function to make API calls with CSRF token
-        async function apiCall(url, method, data) {
+
+        // Global fetch wrapper with error handling
+        async function safeFetch(url, options = {}) {
             try {
+                debugLog(`Making request to ${url}`, options);
                 const response = await fetch(url, {
-                    method: method,
+                    ...options,
+                    credentials: 'same-origin',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
-                    },
-                    body: JSON.stringify(data)
+                        ...options.headers,
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    }
                 });
-                return await response.json();
+                
+                debugLog(`Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    errorLog(`HTTP error! status: ${response.status}`, errorText);
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                debugLog('Response data:', data);
+                return data;
             } catch (error) {
-                console.error('API call failed:', error);
+                errorLog('Fetch error:', error);
                 throw error;
             }
         }
     </script>
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

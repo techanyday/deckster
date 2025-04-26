@@ -2,196 +2,198 @@
 
 {% block content %}
 <div class="container mx-auto px-4 py-8">
-    <h1 class="text-4xl font-bold text-center mb-12">Generate Professional Presentations</h1>
+    <h1 class="text-4xl font-bold text-center mb-4">Decklyst</h1>
+    <p class="text-center text-gray-600 mb-12">Generate Professional Presentations in Minutes</p>
     
-    {% if current_user.is_authenticated %}
-        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
-            <form id="presentationForm" class="space-y-6" method="POST" action="/generate">
-                <!-- Add CSRF token as hidden input -->
-                <input type="hidden" name="csrf_token" id="csrf_token" value="{{ csrf_token() }}">
+    <!-- AdSense Placeholder -->
+    <div class="w-full h-24 bg-gray-100 mb-8 flex items-center justify-center border border-gray-300">
+        <span class="text-gray-500">Advertisement Space</span>
+    </div>
 
-                <div>
-                    <label for="topic" class="block text-sm font-medium text-gray-700">Presentation Topic</label>
-                    <input type="text" id="topic" name="topic" required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                </div>
-
-                <div>
-                    <label for="slides" class="block text-sm font-medium text-gray-700">Number of Slides</label>
-                    <input type="number" id="slides" name="slides" min="1" max="20" value="5" required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                </div>
-
-                <div>
-                    <label for="theme" class="block text-sm font-medium text-gray-700">Color Theme</label>
-                    <select id="theme" name="theme" required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        <option value="professional">Professional (Blue & Gray)</option>
-                        <option value="modern">Modern (Purple & White)</option>
-                        <option value="elegant">Elegant (Black & Gold)</option>
-                        <option value="vibrant">Vibrant (Orange & Teal)</option>
-                        <option value="nature">Nature (Green & Brown)</option>
-                    </select>
-                </div>
-
-                <div class="flex justify-center">
-                    <button type="submit" id="generateBtn" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" id="loadingSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Generate Presentation
-                    </button>
-                </div>
-            </form>
-
-            <div id="errorMessage" class="mt-4 p-4 bg-red-100 text-red-700 rounded-md hidden"></div>
-
-            <div id="downloadSection" class="mt-8 text-center hidden">
-                <a href="#" id="downloadLink" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                    <svg class="-ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
-                    </svg>
-                    Download Presentation
-                </a>
+    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-8">
+        <form id="presentationForm" class="space-y-6" method="POST" action="/generate">
+            {{ form.csrf_token }}
+            <div>
+                <label for="topic" class="block text-sm font-medium text-gray-700">Enter Your Topic or Prompt</label>
+                <input type="text" id="topic" name="topic" required
+                    placeholder="e.g., 'The Future of Artificial Intelligence' or 'Introduction to Digital Marketing'"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
             </div>
+
+            <div class="flex justify-center">
+                <button type="submit" id="generateBtn" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" id="loadingSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Generate Presentation
+                </button>
+            </div>
+        </form>
+
+        <div id="errorMessage" class="mt-4 p-4 bg-red-100 text-red-700 rounded-md hidden"></div>
+
+        <!-- Payment Form -->
+        <div id="paymentSection" class="mt-8 hidden">
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <h3 class="text-lg font-semibold text-yellow-800 mb-2">Premium Access Required</h3>
+                <p class="text-yellow-700">You've reached your free limit. Upgrade now to:</p>
+                <ul class="list-disc list-inside text-yellow-700 mt-2">
+                    <li>Generate unlimited slides</li>
+                    <li>Download your presentations</li>
+                    <li>Access premium templates</li>
+                </ul>
+                <p class="mt-2 text-yellow-700">One-time payment of GHS 20.00</p>
+            </div>
+
+            <form id="paymentForm" class="space-y-4">
+                {{ form.csrf_token }}
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700">Email Address</label>
+                    <input type="email" id="email" name="email" required
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        placeholder="your@email.com">
+                </div>
+                <button type="submit" class="w-full px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    Proceed to Payment
+                </button>
+            </form>
         </div>
-    {% else %}
-        <div class="text-center">
-            <p class="text-xl mb-4">Please log in to start generating presentations</p>
-            <a href="{{ url_for('google.login') }}" class="inline-block bg-indigo-600 text-white py-2 px-6 rounded-md hover:bg-indigo-700 transition-colors">
-                Login with Google
+
+        <div id="downloadSection" class="mt-8 text-center hidden">
+            <a href="#" id="downloadLink" class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                <svg class="-ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download Presentation
             </a>
         </div>
-    {% endif %}
+    </div>
+
+    <!-- Affiliate Marketing Placeholder -->
+    <div class="w-full h-32 bg-gray-100 mt-8 flex items-center justify-center border border-gray-300">
+        <span class="text-gray-500">Affiliate Marketing Space</span>
+    </div>
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-// Log when the script loads
-console.log('Presentation form script loading...');
+document.addEventListener('DOMContentLoaded', function() {
+    debugLog('Initializing presentation form handlers');
 
-// Function to get CSRF token
-function getCSRFToken() {
-    const tokenInput = document.getElementById('csrf_token');
-    if (!tokenInput) {
-        console.error('CSRF token input not found!');
-        return null;
-    }
-    const token = tokenInput.value;
-    console.log('Found CSRF token:', token ? 'Token exists' : 'Token missing');
-    return token;
-}
-
-// Function to handle form submission
-function handleFormSubmit(event) {
-    console.log('Form submit handler triggered');
-    event.preventDefault();
-    
-    // Show loading spinner
+    const form = document.getElementById('presentationForm');
+    const paymentForm = document.getElementById('paymentForm');
     const loadingSpinner = document.getElementById('loadingSpinner');
     const downloadSection = document.getElementById('downloadSection');
+    const paymentSection = document.getElementById('paymentSection');
     const errorMessage = document.getElementById('errorMessage');
-    const submitButton = event.target.querySelector('button[type="submit"]');
-    
-    loadingSpinner.classList.remove('hidden');
-    downloadSection.classList.add('hidden');
-    errorMessage.classList.add('hidden');
-    submitButton.disabled = true;
-    
-    try {
-        // Get CSRF token from hidden input
-        const csrfToken = getCSRFToken();
-        if (!csrfToken) {
-            throw new Error('CSRF token not found in form');
+    const submitButton = form.querySelector('button[type="submit"]');
+    const downloadLink = document.getElementById('downloadLink');
+
+    function showError(message, isWarning = false) {
+        debugLog('Showing error message:', { message, isWarning });
+        errorMessage.textContent = message;
+        errorMessage.classList.remove('hidden');
+        if (isWarning) {
+            errorMessage.classList.remove('bg-red-100', 'text-red-700');
+            errorMessage.classList.add('bg-yellow-100', 'text-yellow-700');
+        } else {
+            errorMessage.classList.remove('bg-yellow-100', 'text-yellow-700');
+            errorMessage.classList.add('bg-red-100', 'text-red-700');
         }
+    }
+
+    function showSuccess(message) {
+        debugLog('Showing success message:', message);
+        errorMessage.textContent = message;
+        errorMessage.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-yellow-100', 'text-yellow-700');
+        errorMessage.classList.add('bg-green-100', 'text-green-700');
+    }
+
+    form.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        debugLog('Form submitted');
         
-        console.log('Using CSRF token from hidden input field');
-        
-        // Get form data
-        const formData = {
-            topic: event.target.querySelector('#topic').value,
-            num_slides: parseInt(event.target.querySelector('#slides').value),
-            theme: event.target.querySelector('#theme').value,
-            csrf_token: csrfToken  // Include token in request body
-        };
-        
-        console.log('Form data prepared:', formData);
-        console.log('CSRF Token being sent:', csrfToken);
-        
-        // Send POST request
-        console.log('Sending fetch request to /generate...');
-        fetch('/generate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken,  // Send in header
-                'X-CSRF-Token': csrfToken  // Send in alternate header
-            },
-            body: JSON.stringify(formData),
-            credentials: 'same-origin'
-        })
-        .then(response => {
-            console.log('Received response:', response.status);
-            return response.json().then(data => {
-                if (!response.ok) {
-                    throw new Error(data.error || 'Server error');
+        // Show loading state
+        loadingSpinner.classList.remove('hidden');
+        downloadSection.classList.add('hidden');
+        paymentSection.classList.add('hidden');
+        errorMessage.classList.add('hidden');
+        submitButton.disabled = true;
+
+        try {
+            const formData = new FormData(form);
+            debugLog('Form data:', Object.fromEntries(formData));
+            
+            const response = await fetch('/generate', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
                 }
-                return data;
             });
-        })
-        .then(data => {
-            console.log('Response data:', data);
+
+            debugLog('Response status:', response.status);
+            const data = await response.json();
+            debugLog('Response data:', data);
+
             if (data.success) {
-                downloadSection.classList.remove('hidden');
-                downloadLink.href = data.download_url;
+                if (data.payment_status) {
+                    // User has paid, show download button
+                    downloadSection.classList.remove('hidden');
+                    downloadLink.href = `/download/${data.filename}`;
+                    showSuccess('Presentation generated successfully!');
+                } else {
+                    // Show message about remaining free slides
+                    showError(data.message, true);
+                }
+            } else if (data.payment_required) {
+                // Show payment section
+                paymentSection.classList.remove('hidden');
+                showError(data.error, true);
             } else {
                 throw new Error(data.error || 'Failed to generate presentation');
             }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            errorMessage.textContent = error.message;
-            errorMessage.classList.remove('hidden');
-        })
-        .finally(() => {
+        } catch (error) {
+            debugLog('Error:', error);
+            showError(error.message);
+        } finally {
             loadingSpinner.classList.add('hidden');
             submitButton.disabled = false;
-        });
-    } catch (error) {
-        console.error('Error in form handler:', error);
-        errorMessage.textContent = error.message;
-        errorMessage.classList.remove('hidden');
-        loadingSpinner.classList.add('hidden');
-        submitButton.disabled = false;
-    }
-}
+        }
+    });
 
-// Wait for DOM to be ready
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM Content Loaded');
-    
-    const form = document.getElementById('presentationForm');
-    if (!form) {
-        console.error('Form not found!');
-        return;
-    }
-    
-    console.log('Form found, checking CSRF token');
-    const token = getCSRFToken();
-    if (!token) {
-        console.error('No CSRF token found in form!');
-    } else {
-        console.log('CSRF token verified in form');
-    }
-    
-    console.log('Attaching submit handler');
-    form.addEventListener('submit', handleFormSubmit);
-    console.log('Form handler attached successfully');
+    paymentForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+        debugLog('Payment form submitted');
+        
+        try {
+            const formData = new FormData(paymentForm);
+            debugLog('Payment form data:', Object.fromEntries(formData));
+            
+            const response = await fetch('/payment/initialize', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': paymentForm.querySelector('input[name="csrf_token"]').value
+                }
+            });
+
+            debugLog('Payment response status:', response.status);
+            const data = await response.json();
+            debugLog('Payment response data:', data);
+
+            if (data.success && data.authorization_url) {
+                window.location.href = data.authorization_url;
+            } else {
+                throw new Error(data.error || 'Payment initialization failed');
+            }
+        } catch (error) {
+            debugLog('Payment error:', error);
+            showError(error.message);
+        }
+    });
 });
-
-// Double-check that the script runs
-console.log('Presentation form script loaded');
 </script>
 {% endblock %}
